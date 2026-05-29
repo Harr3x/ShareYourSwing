@@ -1,4 +1,4 @@
-const CACHE = 'sys-v1';
+const CACHE = 'sys-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const ASSETS = [
   './screens/stats.js',
   './screens/courses.js',
   './screens/players.js',
+  './screens/new-round.js',
 ];
 
 self.addEventListener('install', e => {
