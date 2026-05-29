@@ -21,8 +21,13 @@ async function navigate() {
   app.innerHTML = '';
 
   const loader = routes[hash] ?? routes['#home'];
-  const mod = await loader();
-  mod.render(app, params);
+  try {
+    const mod = await loader();
+    mod.render(app, params);
+  } catch (err) {
+    app.innerHTML = '<p style="padding:20px;color:red">Fehler beim Laden der Seite.</p>';
+    console.error(err);
+  }
 
   renderNavBar(document.getElementById('nav'), hash);
 }
