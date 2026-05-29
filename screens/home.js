@@ -1,5 +1,13 @@
 import { getAllPlayers, getAllCourses, getAllRounds, addRound, getCourse } from '../db.js';
 
+function escapeHTML(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export async function render(container) {
   const [players, courses, rounds] = await Promise.all([
     getAllPlayers(), getAllCourses(), getAllRounds()
@@ -33,14 +41,14 @@ function renderWizard(players, courses) {
     <h2>Neue Runde</h2>
     <label style="font-weight:600;display:block;margin-bottom:6px">Platz</label>
     <select id="select-course" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
-      ${courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+      ${courses.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('')}
     </select>
     <label style="font-weight:600;display:block;margin-bottom:8px">Spieler</label>
     <div id="player-checks" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
       ${players.map(p => `
         <label style="display:flex;align-items:center;gap:10px;font-size:16px;padding:10px;background:var(--surface);border-radius:var(--radius);">
           <input type="checkbox" class="player-check" value="${p.id}" style="width:20px;height:20px;">
-          ${p.name}
+          ${escapeHTML(p.name)}
         </label>
       `).join('')}
     </div>
@@ -60,7 +68,7 @@ async function recentRoundsHTML(rounds, courses) {
       return `
         <div class="card" style="cursor:pointer" onclick="location.hash='#scorecard?roundId=${r.id}'">
           <div>
-            <div style="font-weight:600">${course?.name ?? '?'}</div>
+            <div style="font-weight:600">${escapeHTML(course?.name ?? '?')}</div>
             <div class="text-muted">${date}</div>
           </div>
           <span style="color:var(--text-muted)">→</span>
