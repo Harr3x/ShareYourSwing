@@ -54,7 +54,7 @@ export async function render(container, params) {
           </table>
         </div>
         <div style="margin-top:16px;">
-          <a href="#play?roundId=${roundId}&hole=0&player=0" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
+          <a href="#play?roundId=${roundId}&hole=0" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
             Weiter spielen ${icons.chevronRight}
           </a>
         </div>

@@ -19,16 +19,27 @@ function parseHash() {
 async function navigate() {
   const { hash, params } = parseHash();
   const app = document.getElementById('app');
+
+  // Hide before render to avoid flash
+  app.style.transition = 'none';
+  app.style.opacity = '0';
+  app.style.transform = 'translateY(14px)';
   app.innerHTML = '';
 
   const loader = routes[hash] ?? routes['#home'];
   try {
     const mod = await loader();
-    mod.render(app, params);
+    await mod.render(app, params);
   } catch (err) {
     app.innerHTML = '<p style="padding:20px;color:red">Fehler beim Laden der Seite.</p>';
-    console.error(err);
   }
+
+  // Animate in after content is ready
+  requestAnimationFrame(() => {
+    app.style.transition = 'opacity 0.26s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)';
+    app.style.opacity = '1';
+    app.style.transform = 'translateY(0)';
+  });
 
   renderNavBar(document.getElementById('nav'), hash);
 }

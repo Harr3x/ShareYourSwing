@@ -2,10 +2,17 @@ import { getRound, getCourse, getAllPlayers, saveHoleScore } from '../db.js';
 import { getScoreClass, getScoreLabel } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 
+function escapeHTML(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export async function render(container, params) {
   const { roundId } = params;
   let holeIndex = parseInt(params.hole ?? '0', 10);
-  let playerIndex = parseInt(params.player ?? '0', 10);
 
   const [round, players] = await Promise.all([
     getRound(roundId),
@@ -16,79 +23,175 @@ export async function render(container, params) {
   const playerMap = new Map(players.map(p => [p.id, p]));
   const roundPlayers = round.playerIds.map(id => playerMap.get(id)).filter(Boolean);
 
-  function currentPar() {
-    return course.holes[holeIndex].par;
+  function currentPar() { return course.holes[holeIndex].par; }
+
+  let currentScores = {};
+
+  function initScores() {
+    roundPlayers.forEach(p => {
+      currentScores[p.id] = round.scores[p.id][holeIndex] ?? currentPar();
+    });
   }
 
-  let currentScore = currentPar();
-
   function updateHash() {
-    history.replaceState(null, '', `#play?roundId=${roundId}&hole=${holeIndex}&player=${playerIndex}`);
+    history.replaceState(null, '', `#play?roundId=${roundId}&hole=${holeIndex}`);
+  }
+
+  function holeStatus(i) {
+    const scored = roundPlayers.filter(p => round.scores[p.id][i] != null).length;
+    if (scored === 0) return 'empty';
+    if (scored === roundPlayers.length) return 'complete';
+    return 'partial';
+  }
+
+  function progressDots() {
+    return Array.from({ length: 18 }, (_, i) => {
+      let cls = 'hole-dot';
+      if (i === holeIndex) cls += ' hole-dot--active';
+      else if (i < holeIndex) cls += ' hole-dot--done';
+      return `<span class="${cls}"></span>`;
+    }).join('');
+  }
+
+  function playerCardHTML(p) {
+    const par = currentPar();
+    const score = currentScores[p.id];
+    const cls = getScoreClass(score, par);
+    const label = getScoreLabel(score, par);
+    return `
+      <div class="card" data-card="${p.id}" style="flex-direction:column;align-items:stretch;gap:12px;">
+        <div style="font-size:17px;font-weight:600;letter-spacing:-0.2px;">${escapeHTML(p.name)}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <button data-minus="${p.id}" style="width:52px;height:52px;min-height:unset;border-radius:50%;font-size:26px;font-weight:300;background:var(--surface-2);border:1.5px solid var(--border);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;justify-content:center;">−</button>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
+            <span class="${cls}" data-badge="${p.id}" style="width:52px;height:52px;font-size:24px;">${score}</span>
+            <div data-label="${p.id}" style="font-size:12px;color:var(--text-muted);font-weight:500;min-height:16px;text-align:center;">${label}</div>
+          </div>
+          <button data-plus="${p.id}" style="width:52px;height:52px;min-height:unset;border-radius:50%;font-size:26px;font-weight:300;background:var(--surface-2);border:1.5px solid var(--border);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;justify-content:center;">+</button>
+        </div>
+      </div>
+    `;
   }
 
   function draw() {
-    const player = roundPlayers[playerIndex];
     const par = currentPar();
-    const cls = getScoreClass(currentScore, par);
-    const label = getScoreLabel(currentScore, par);
-    const totalPlayers = roundPlayers.length;
+    const isLast = holeIndex === 17;
 
     container.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <button class="btn-ghost" id="btn-back" style="padding:0 14px;display:inline-flex;align-items:center;gap:4px">${icons.chevronLeft} Zurück</button>
-        <span style="font-size:13px;color:var(--text-muted)">Spieler ${playerIndex + 1} / ${totalPlayers}</span>
-        <a href="#scorecard?roundId=${roundId}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:8px" title="Scorecard">${icons.scorecard}</a>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px;">
+        <button id="btn-back" class="btn-ghost" style="padding:0 12px;font-size:14px;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">${icons.chevronLeft} Zurück</button>
+        <div class="hole-progress">${progressDots()}</div>
+        <a href="#scorecard?roundId=${roundId}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>
       </div>
 
-      <div style="text-align:center;margin-bottom:4px">
-        <div style="font-size:28px;font-weight:700;margin-top:4px;letter-spacing:-0.5px">${player.name}</div>
+      <button id="btn-hole-overview" style="width:100%;background:none;border:none;border-radius:var(--radius);padding:8px 16px 16px;min-height:unset;text-align:center;cursor:pointer;transition:background 0.15s ease;" title="Bahn wählen">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:2px;">Bahn</div>
+        <div style="font-size:56px;font-weight:700;line-height:1;letter-spacing:-3px;color:var(--text);">${holeIndex + 1}</div>
+        <div class="par-badge" style="display:inline-flex;margin-top:10px;">Par ${par}</div>
+      </button>
+
+      <div id="player-cards">
+        ${roundPlayers.map(p => playerCardHTML(p)).join('')}
       </div>
 
-      <div class="hole-header">
-        <div class="hole-number">Bahn ${holeIndex + 1}</div>
-        <div class="par-badge">Par ${par}</div>
-      </div>
-
-      <div class="score-counter" style="justify-content:center;margin-bottom:8px;">
-        <button id="btn-minus">−</button>
-        <div class="score-value">
-          <span class="${cls}" style="width:64px;height:64px;font-size:36px;">${currentScore}</span>
-        </div>
-        <button id="btn-plus">+</button>
-      </div>
-
-      <div style="text-align:center;margin-bottom:32px;font-size:14px;color:var(--text-muted);min-height:20px">${label}</div>
-
-      <button class="btn-primary" id="btn-confirm">Bestätigen</button>
+      <button id="btn-confirm" class="btn-primary" style="margin-top:8px;">
+        ${isLast ? 'Runde beenden' : `Nächste Bahn ${icons.chevronRight}`}
+      </button>
     `;
-
-    container.querySelector('#btn-minus').addEventListener('click', () => {
-      if (currentScore > 1) { currentScore--; draw(); }
-    });
-    container.querySelector('#btn-plus').addEventListener('click', () => {
-      currentScore++;
-      draw();
-    });
-    container.querySelector('#btn-confirm').addEventListener('click', async () => {
-      round.scores[round.playerIds[playerIndex]][holeIndex] = currentScore;
-      await saveHoleScore(roundId, round.playerIds[playerIndex], holeIndex, currentScore);
-      advance();
-    });
-    container.querySelector('#btn-back').addEventListener('click', () => {
-      goBack();
-    });
   }
 
-  function advance() {
-    if (playerIndex < roundPlayers.length - 1) {
-      playerIndex++;
-      currentScore = currentPar();
-      updateHash();
-      draw();
-    } else if (holeIndex < 17) {
+  function updateScoreDisplay(pid) {
+    const par = currentPar();
+    const score = currentScores[pid];
+    const cls = getScoreClass(score, par);
+    const label = getScoreLabel(score, par);
+
+    const badge = container.querySelector(`[data-badge="${pid}"]`);
+    const labelEl = container.querySelector(`[data-label="${pid}"]`);
+    if (!badge) return;
+
+    badge.className = `${cls}`;
+    badge.setAttribute('data-badge', pid);
+    badge.style.cssText = 'width:52px;height:52px;font-size:24px;';
+    badge.textContent = score;
+    if (labelEl) labelEl.textContent = label;
+
+    void badge.offsetWidth;
+    badge.classList.add('score-pop');
+  }
+
+  // ── Hole overview sheet ──────────────────────────────────────
+
+  function showHoleOverview() {
+    closeOverview();
+    const wrap = document.createElement('div');
+    wrap.id = 'hole-overview-wrap';
+
+    const tiles = Array.from({ length: 18 }, (_, i) => {
+      const status = holeStatus(i);
+      const par = course.holes[i].par;
+      const isCurrent = i === holeIndex;
+
+      let bg, color, border;
+      if (isCurrent) {
+        bg = 'var(--primary)'; color = 'white'; border = 'none';
+      } else if (status === 'complete') {
+        bg = 'var(--primary-light)'; color = 'var(--primary)'; border = '1.5px solid var(--primary)';
+      } else if (status === 'partial') {
+        bg = '#fff8e1'; color = '#b45309'; border = '1.5px solid #fcd34d';
+      } else {
+        bg = 'var(--surface-2)'; color = 'var(--text)'; border = '1px solid var(--border-light)';
+      }
+
+      return `
+        <button data-jump="${i}" style="background:${bg};color:${color};border:${border};border-radius:var(--radius-sm);padding:12px 6px;min-height:unset;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;transition:filter 0.12s ease;">
+          <span style="font-size:22px;font-weight:700;line-height:1;">${i + 1}</span>
+          <span style="font-size:11px;font-weight:500;opacity:0.75;">Par ${par}</span>
+        </button>
+      `;
+    }).join('');
+
+    wrap.innerHTML = `
+      <div class="overlay" id="hole-overview-overlay"></div>
+      <div class="bottom-sheet" id="hole-overview-sheet">
+        <div class="handle"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h2 style="margin:0;color:var(--text);">Bahn wählen</h2>
+          <div style="display:flex;gap:12px;font-size:11px;color:var(--text-muted);align-items:center;gap:8px;">
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:var(--primary-light);border:1.5px solid var(--primary);display:inline-block;"></span> Fertig</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:#fff8e1;border:1.5px solid #fcd34d;display:inline-block;"></span> Teils</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          ${tiles}
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(wrap);
+    document.getElementById('hole-overview-overlay').addEventListener('click', closeOverview);
+  }
+
+  function closeOverview() {
+    document.getElementById('hole-overview-wrap')?.remove();
+  }
+
+  // ── Advance / back ───────────────────────────────────────────
+
+  async function advance() {
+    const btn = container.querySelector('#btn-confirm');
+    if (btn) btn.disabled = true;
+
+    await Promise.all(
+      roundPlayers.map(p => {
+        round.scores[p.id][holeIndex] = currentScores[p.id];
+        return saveHoleScore(roundId, p.id, holeIndex, currentScores[p.id]);
+      })
+    );
+
+    if (holeIndex < 17) {
       holeIndex++;
-      playerIndex = 0;
-      currentScore = currentPar();
+      initScores();
       updateHash();
       draw();
     } else {
@@ -97,17 +200,9 @@ export async function render(container, params) {
   }
 
   function goBack() {
-    if (playerIndex > 0) {
-      playerIndex--;
-      const prevScore = round.scores[round.playerIds[playerIndex]]?.[holeIndex];
-      currentScore = prevScore ?? currentPar();
-      updateHash();
-      draw();
-    } else if (holeIndex > 0) {
+    if (holeIndex > 0) {
       holeIndex--;
-      playerIndex = roundPlayers.length - 1;
-      const prevScore = round.scores[round.playerIds[playerIndex]]?.[holeIndex];
-      currentScore = prevScore ?? currentPar();
+      initScores();
       updateHash();
       draw();
     } else {
@@ -115,5 +210,45 @@ export async function render(container, params) {
     }
   }
 
+  function jumpToHole(i) {
+    holeIndex = i;
+    initScores();
+    updateHash();
+    closeOverview();
+    draw();
+  }
+
+  // ── Init ─────────────────────────────────────────────────────
+
+  initScores();
   draw();
+
+  container.addEventListener('click', e => {
+    if (e.target.closest('#btn-back')) { goBack(); return; }
+    if (e.target.closest('#btn-confirm')) { advance(); return; }
+    if (e.target.closest('#btn-hole-overview')) { showHoleOverview(); return; }
+
+    const minus = e.target.closest('[data-minus]');
+    if (minus) {
+      const pid = minus.dataset.minus;
+      if (currentScores[pid] > 1) { currentScores[pid]--; updateScoreDisplay(pid); }
+      return;
+    }
+    const plus = e.target.closest('[data-plus]');
+    if (plus) {
+      currentScores[plus.dataset.plus]++;
+      updateScoreDisplay(plus.dataset.plus);
+      return;
+    }
+  });
+
+  // Delegated from body for the sheet (outside container); self-removes on unmount
+  document.addEventListener('click', function onJump(e) {
+    if (!document.contains(container)) {
+      document.removeEventListener('click', onJump);
+      return;
+    }
+    const tile = e.target.closest('[data-jump]');
+    if (tile) jumpToHole(parseInt(tile.dataset.jump, 10));
+  });
 }

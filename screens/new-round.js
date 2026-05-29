@@ -47,6 +47,6 @@ export async function render(container) {
     const checked = [...container.querySelectorAll('.player-check:checked')].map(el => el.value);
     if (!checked.length) { alert('Mindestens einen Spieler wählen.'); return; }
     const round = await addRound(courseId, checked);
-    location.hash = `#play?roundId=${round.id}&hole=0&player=0`;
+    location.hash = `#play?roundId=${round.id}&hole=0`;
   });
 }

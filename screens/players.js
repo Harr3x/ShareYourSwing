@@ -10,6 +10,70 @@ function escapeHTML(str) {
     .replace(/"/g, '&quot;');
 }
 
+const iconBirdie    = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="5" r="4"/></svg>`;
+const iconEagle     = `<svg width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="5" r="4"/><circle cx="11" cy="5" r="4"/></svg>`;
+const iconFlag      = `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="1" x2="2" y2="11"/><path d="M2 1l6 2.5-6 2.5"/></svg>`;
+const iconHoleInOne = `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.34 4.13H12L8.33 6.69l1.34 4.12L6 8.25l-3.67 2.56 1.34-4.12L0 4.13h4.66z"/></svg>`;
+
+function computeBirdieStats(rounds, courseMap, playerId) {
+  let birdies = 0, eagles = 0, holesInOne = 0;
+  for (const r of rounds) {
+    if (!r.playerIds.includes(playerId)) continue;
+    const course = courseMap.get(r.courseId);
+    if (!course) continue;
+    const scores = r.scores[playerId];
+    for (let i = 0; i < 18; i++) {
+      if (scores[i] == null) continue;
+      if (scores[i] === 1) { holesInOne++; continue; }
+      const diff = scores[i] - course.holes[i].par;
+      if (diff <= -2) eagles++;
+      else if (diff === -1) birdies++;
+    }
+  }
+  return { birdies, eagles, holesInOne };
+}
+
+function computeCourseRecords(rounds, courseMap, playerId) {
+  const records = [];
+  const courseIds = [...new Set(rounds.map(r => r.courseId))];
+  for (const courseId of courseIds) {
+    const course = courseMap.get(courseId);
+    if (!course) continue;
+    let best = Infinity, holders = [];
+    for (const r of rounds.filter(r => r.courseId === courseId)) {
+      for (const pid of r.playerIds) {
+        const scores = r.scores[pid];
+        if (!scores || scores.some(s => s == null)) continue;
+        const total = scores.reduce((s, v) => s + v, 0);
+        if (total < best) { best = total; holders = [pid]; }
+        else if (total === best && !holders.includes(pid)) holders.push(pid);
+      }
+    }
+    if (holders.includes(playerId) && best < Infinity) {
+      records.push({ name: course.name, score: best });
+    }
+  }
+  return records;
+}
+
+function achievementChips(birdieStats, records) {
+  const { birdies, eagles, holesInOne } = birdieStats;
+  const chips = [];
+  if (holesInOne > 0) chips.push(
+    `<span class="achievement" style="background:#faf5ff;color:#7c3aed;border-color:#c4b5fd;">${iconHoleInOne} ${holesInOne} Hole in One</span>`
+  );
+  if (eagles > 0) chips.push(
+    `<span class="achievement" style="background:#fffbe6;color:#b8860b;border-color:#edd56a;">${iconEagle} ${eagles} Eagle${eagles !== 1 ? 's' : ''}</span>`
+  );
+  if (birdies > 0) chips.push(
+    `<span class="achievement" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;">${iconBirdie} ${birdies} Birdie${birdies !== 1 ? 's' : ''}</span>`
+  );
+  for (const r of records) chips.push(
+    `<span class="achievement" style="background:#fff3e0;color:#c2510a;border-color:#ffcc80;">${iconFlag} Rekord · ${escapeHTML(r.name)}</span>`
+  );
+  return chips.join('');
+}
+
 export async function render(container) {
   const [allPlayers, rounds, courses] = await Promise.all([
     getAllPlayers(), getAllRounds(), getAllCourses()
@@ -57,14 +121,31 @@ export async function render(container) {
       list.innerHTML = '<p class="text-muted">Noch keine Spieler.</p>';
       return;
     }
-    list.innerHTML = players.map(p => {
+
+    const sorted = [...players].sort((a, b) => {
+      const ha = computeHandicap(rounds, courseMap, a.id).handicap;
+      const hb = computeHandicap(rounds, courseMap, b.id).handicap;
+      if (ha == null && hb == null) return 0;
+      if (ha == null) return 1;
+      if (hb == null) return -1;
+      return ha - hb;
+    });
+
+    list.innerHTML = sorted.map(p => {
       const hcp = computeHandicap(rounds, courseMap, p.id);
+      const birdieStats = computeBirdieStats(rounds, courseMap, p.id);
+      const records = computeCourseRecords(rounds, courseMap, p.id);
+      const chips = achievementChips(birdieStats, records);
       return `
-      <div class="card">
-        <span style="font-weight:500">${escapeHTML(p.name)} <span style="color:var(--text-muted);font-weight:400">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span></span>
-        <button class="btn-icon" data-edit="${p.id}" aria-label="Bearbeiten">${icons.edit}</button>
-      </div>
-    `}).join('');
+        <div class="card" style="align-items:flex-start;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600">${escapeHTML(p.name)}<span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span></div>
+            ${chips ? `<div class="achievement-row">${chips}</div>` : ''}
+          </div>
+          <button class="btn-icon" data-edit="${p.id}" aria-label="Bearbeiten" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>
+        </div>
+      `;
+    }).join('');
   }
 
   function showAddStep() {

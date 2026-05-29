@@ -109,10 +109,18 @@ export async function render(container) {
 
       const sheet = document.getElementById('bottom-sheet');
       sheet.querySelector('#btn-minus').addEventListener('click', () => {
-        if (currentPar > 2) { currentPar--; draw(); }
+        if (currentPar > 2) {
+          currentPar--;
+          draw();
+          document.getElementById('bottom-sheet')?.querySelector('.score-value')?.classList.add('score-pop');
+        }
       });
       sheet.querySelector('#btn-plus').addEventListener('click', () => {
-        if (currentPar < 6) { currentPar++; draw(); }
+        if (currentPar < 6) {
+          currentPar++;
+          draw();
+          document.getElementById('bottom-sheet')?.querySelector('.score-value')?.classList.add('score-pop');
+        }
       });
       sheet.querySelector('#btn-confirm').addEventListener('click', async () => {
         holes.push({ par: currentPar });
