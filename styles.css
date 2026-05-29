@@ -1,0 +1,180 @@
+:root {
+  --bg: #ffffff;
+  --surface: #f4f4f4;
+  --border: #d0d0d0;
+  --text: #111111;
+  --text-muted: #666666;
+  --primary: #2d7a2d;
+  --primary-text: #ffffff;
+  --danger: #c0392b;
+  --radius: 10px;
+  --touch: 48px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+#app {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px 80px;
+}
+
+#nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 64px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  display: flex;
+  z-index: 100;
+}
+
+#nav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  gap: 2px;
+}
+
+#nav a.active { color: var(--primary); font-weight: 600; }
+#nav a .icon { font-size: 22px; }
+
+button {
+  min-height: var(--touch);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 20px;
+}
+
+.btn-primary { background: var(--primary); color: var(--primary-text); width: 100%; }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-danger { background: var(--danger); color: #fff; }
+
+.score-counter {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.score-counter button {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  font-size: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.score-counter .score-value {
+  font-size: 48px;
+  font-weight: 700;
+  min-width: 60px;
+  text-align: center;
+}
+
+.golf-eagle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  font-weight: 700;
+}
+.golf-birdie {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+  font-weight: 700;
+}
+.golf-par {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  font-weight: 400;
+}
+.golf-bogey {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border: 2px solid var(--text);
+  font-weight: 700;
+}
+.golf-double {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border: 2px solid var(--text);
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  font-weight: 700;
+}
+.golf-triple {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+h2 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+
+.scorecard-wrap { overflow-x: auto; }
+.scorecard {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+}
+.scorecard th, .scorecard td {
+  padding: 6px 4px;
+  text-align: center;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.scorecard th { background: var(--surface); font-weight: 600; }
+.scorecard .row-par { background: #e8f5e9; }
+.scorecard .row-total { font-weight: 700; }
+
+.mt-16 { margin-top: 16px; }
+.text-muted { color: var(--text-muted); font-size: 13px; }
+.row { display: flex; gap: 10px; }
+.spacer { flex: 1; }
