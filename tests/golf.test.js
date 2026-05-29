@@ -21,6 +21,8 @@ assert.equal(getScoreLabel(3, 4), 'Birdie');
 assert.equal(getScoreLabel(4, 4), 'Par');
 assert.equal(getScoreLabel(5, 4), 'Bogey');
 assert.equal(getScoreLabel(2, 4), 'Eagle');
+assert.equal(getScoreLabel(6, 4), 'Double Bogey');
+assert.equal(getScoreLabel(7, 4), 'Triple+');
 
 // computePlayerStats — one completed round
 const fakeCourse = { id: 'c1', name: 'Test', holes: Array.from({length:18}, () => ({ par: 4 })) };
@@ -36,5 +38,19 @@ assert.equal(stats.breakdown.bogey, 1);
 assert.equal(stats.breakdown.par, 16);
 assert.equal(stats.roundTrend[0].scoreVsPar, 0); // birdie + bogey = net 0
 assert.equal(stats.avgScoreVsPar, 0);
+
+// computePlayerStats — partial round (not all 18 holes completed)
+const scoresPartial = Array(18).fill(null);
+scoresPartial[0] = 3; // birdie on hole 1
+scoresPartial[1] = 5; // bogey on hole 2
+scoresPartial[2] = 4; // par on hole 3
+// holes 3-17 remain null
+const fakeRoundPartial = { id: 'r2', courseId: 'c1', date: '2026-05-02', playerIds: ['p1'], scores: { p1: scoresPartial } };
+const statsPartial = computePlayerStats([fakeRoundPartial], courses, 'p1');
+assert.equal(statsPartial.totalRounds, 1); // counted as a round the player participated in
+assert.equal(statsPartial.roundTrend.length, 0); // but NOT included in roundTrend (incomplete)
+assert.equal(statsPartial.breakdown.birdie, 1);
+assert.equal(statsPartial.breakdown.bogey, 1);
+assert.equal(statsPartial.breakdown.par, 1);
 
 console.log('All tests passed ✓');
