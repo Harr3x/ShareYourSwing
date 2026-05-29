@@ -26,6 +26,54 @@ export function getScoreLabel(strokes, par) {
 }
 
 /**
+ * Compute handicap for a player based on swingolf rules.
+ * Only 18-hole rounds with all scores filled count.
+ * Start-HCP: 36.0, max: 36.0
+ * Improvement (result < HCP): factor 0.4 if HCP >= 18, else 0.2
+ * Worsening (result > HCP): factor 0.1
+ * Returns: { handicap: number|null, history: [{date, hcp}] }
+ */
+export function computeHandicap(rounds, courses, playerId) {
+  const completed = rounds
+    .filter(r => {
+      if (!r.playerIds.includes(playerId)) return false;
+      const scores = r.scores[playerId];
+      if (!scores) return false;
+      return scores.every(s => s != null);
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!completed.length) return { handicap: null, history: [] };
+
+  let hcp = 36.0;
+  const history = [];
+
+  for (const round of completed) {
+    const course = courses.get(round.courseId);
+    if (!course) continue;
+
+    const scores = round.scores[playerId];
+    let roundVsPar = 0;
+    for (let i = 0; i < 18; i++) {
+      roundVsPar += scores[i] - course.holes[i].par;
+    }
+
+    const diff = roundVsPar - hcp;
+    let delta;
+    if (diff < 0) {
+      delta = hcp >= 18.0 ? diff * 0.4 : diff * 0.2;
+    } else {
+      delta = diff * 0.1;
+    }
+
+    hcp = Math.min(36.0, Math.round((hcp + delta) * 10) / 10);
+    history.push({ date: round.date, hcp });
+  }
+
+  return { handicap: history.length ? history[history.length - 1].hcp : null, history };
+}
+
+/**
  * Aggregate stats for one player across all rounds.
  * rounds: Round[] (from DB)
  * courses: Map<courseId, Course>

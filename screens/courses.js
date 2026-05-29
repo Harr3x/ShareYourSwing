@@ -1,26 +1,47 @@
-import { getAllCourses, addCourse, deleteCourse } from '../db.js';
+import { getAllCourses, addCourse, deleteCourse, updateCourse, getCourse } from '../db.js';
 
-function parInputsHTML() {
-  return Array.from({ length: 18 }, (_, i) => `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <label style="min-width:60px;font-size:14px;">Bahn ${i + 1}</label>
-      <input type="number" min="2" max="6" value="3" data-hole="${i}"
-        style="width:70px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:16px;">
-    </div>
-  `).join('');
+function escapeHTML(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 export async function render(container) {
   container.innerHTML = `
     <h1>Plätze</h1>
     <div id="course-list"></div>
-    <div class="mt-16">
-      <h2>Neuer Platz</h2>
-      <input id="course-name" placeholder="Platzname" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;">
-      <div id="par-inputs">${parInputsHTML()}</div>
-      <button class="btn-primary mt-16" id="add-course-btn">Platz speichern</button>
-    </div>
+    <button class="btn-primary" id="show-form-btn" style="margin-top:16px">Neuer Platz</button>
   `;
+
+  function closeSheet() {
+    const existing = document.getElementById('sheet-wrap');
+    if (existing) existing.remove();
+  }
+
+  function showSheet(innerHTML) {
+    closeSheet();
+    const wrap = document.createElement('div');
+    wrap.id = 'sheet-wrap';
+    wrap.innerHTML = `
+      <div class="overlay" id="sheet-overlay"></div>
+      <div class="bottom-sheet" id="bottom-sheet">
+        <div class="handle"></div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    document.getElementById('sheet-overlay').addEventListener('click', closeSheet);
+    updateSheetContent(innerHTML);
+  }
+
+  function updateSheetContent(innerHTML) {
+    const sheet = document.getElementById('bottom-sheet');
+    if (!sheet) return;
+    const content = sheet.querySelector('#sheet-content');
+    if (content) content.innerHTML = innerHTML;
+    else sheet.insertAdjacentHTML('beforeend', `<div id="sheet-content">${innerHTML}</div>`);
+  }
 
   async function refresh() {
     const courses = await getAllCourses();
@@ -34,33 +55,114 @@ export async function render(container) {
       return `
         <div class="card">
           <div>
-            <div style="font-weight:600">${c.name}</div>
+            <div style="font-weight:600">${escapeHTML(c.name)}</div>
             <div class="text-muted">Par ${totalPar} · 18 Bahnen</div>
           </div>
-          <button class="btn-danger" style="padding:0 14px;min-height:36px;font-size:13px;" data-delete="${c.id}">Löschen</button>
+          <button style="background:none;border:none;font-size:18px;cursor:pointer;padding:8px;min-height:unset;border-radius:50%;" data-edit="${c.id}">✏️</button>
         </div>
       `;
     }).join('');
   }
 
+  function showNameStep() {
+    showSheet(`
+      <a href="#" id="cancel-form" style="display:inline-block;margin-bottom:16px;color:var(--text-muted);text-decoration:none">← Abbrechen</a>
+      <label style="font-weight:600;display:block;margin-bottom:6px">Platzname</label>
+      <input id="course-name" placeholder="z.B. Golfclub Musterstadt" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
+      <button class="btn-primary" id="name-next-btn">Weiter →</button>
+    `);
+
+    const sheet = document.getElementById('bottom-sheet');
+    sheet.querySelector('#name-next-btn').addEventListener('click', () => {
+      const name = sheet.querySelector('#course-name').value.trim();
+      if (!name) return;
+      showHoleStep(name, []);
+    });
+    sheet.querySelector('#cancel-form').addEventListener('click', e => {
+      e.preventDefault();
+      closeSheet();
+    });
+  }
+
+  function showHoleStep(courseName, holes) {
+    const holeIndex = holes.length;
+    let currentPar = 3;
+
+    function draw() {
+      const holeNumber = holeIndex + 1;
+updateSheetContent(`
+        <a href="#" id="cancel-form" style="display:inline-block;margin-bottom:16px;color:var(--text-muted);text-decoration:none">← Abbrechen</a>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Platz: ${escapeHTML(courseName)}</div>
+        <div class="hole-header">
+          <div class="hole-number">Bahn ${holeNumber}</div>
+          <div class="par-badge">Par ${currentPar}</div>
+        </div>
+        <div class="score-counter" style="justify-content:center;margin-bottom:8px;">
+          <button id="btn-minus">−</button>
+          <div class="score-value" style="font-size:48px;font-weight:700;min-width:60px;text-align:center">${currentPar}</div>
+          <button id="btn-plus">+</button>
+        </div>
+        <div style="text-align:center;margin-bottom:32px;font-size:14px;color:var(--text-muted);min-height:20px"></div>
+        <button class="btn-primary" id="btn-confirm">Bestätigen ✓</button>
+      `);
+
+      const sheet = document.getElementById('bottom-sheet');
+      sheet.querySelector('#btn-minus').addEventListener('click', () => {
+        if (currentPar > 2) { currentPar--; draw(); }
+      });
+      sheet.querySelector('#btn-plus').addEventListener('click', () => {
+        if (currentPar < 6) { currentPar++; draw(); }
+      });
+      sheet.querySelector('#btn-confirm').addEventListener('click', async () => {
+        holes.push({ par: currentPar });
+        if (holeIndex < 17) {
+          showHoleStep(courseName, holes);
+        } else {
+          await addCourse(courseName, holes);
+          closeSheet();
+          await refresh();
+        }
+      });
+      sheet.querySelector('#cancel-form').addEventListener('click', e => {
+        e.preventDefault();
+        closeSheet();
+      });
+    }
+
+    draw();
+  }
+
+  function showEditStep(id, currentName) {
+    showSheet(`
+      <label style="font-weight:600;display:block;margin-bottom:6px">Platzname</label>
+      <input id="edit-course-name" value="${escapeHTML(currentName)}" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
+      <button class="btn-primary" id="save-course-btn">Speichern</button>
+      <button class="btn-danger" id="delete-course-btn" style="margin-top:12px;width:100%">Platz löschen</button>
+    `);
+
+    const sheet = document.getElementById('bottom-sheet');
+    sheet.querySelector('#save-course-btn').addEventListener('click', async () => {
+      const name = sheet.querySelector('#edit-course-name').value.trim();
+      if (!name) return;
+      await updateCourse({ ...(await getCourse(id)), name });
+      closeSheet();
+      await refresh();
+    });
+    sheet.querySelector('#delete-course-btn').addEventListener('click', async () => {
+      await deleteCourse(id);
+      closeSheet();
+      await refresh();
+    });
+  }
+
   await refresh();
 
-  container.querySelector('#add-course-btn').addEventListener('click', async () => {
-    const name = container.querySelector('#course-name').value.trim();
-    if (!name) return;
-    const holes = Array.from(container.querySelectorAll('[data-hole]')).map(inp => ({
-      par: parseInt(inp.value, 10) || 3
-    }));
-    await addCourse(name, holes);
-    container.querySelector('#course-name').value = '';
-    container.querySelectorAll('[data-hole]').forEach(inp => inp.value = '3');
-    await refresh();
-  });
+  container.querySelector('#show-form-btn').addEventListener('click', showNameStep);
 
   container.addEventListener('click', async e => {
-    const id = e.target.dataset.delete;
+    const id = e.target.dataset.edit;
     if (!id) return;
-    await deleteCourse(id);
-    await refresh();
+    const course = await getCourse(id);
+    if (course) showEditStep(id, course.name);
   });
 }

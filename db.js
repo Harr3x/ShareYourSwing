@@ -85,6 +85,22 @@ export async function deletePlayer(id) {
   return tx(db, ['players'], 'readwrite', t => del(t.objectStore('players'), id));
 }
 
+export async function updatePlayer(id, name) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(['players'], 'readwrite');
+    const store = t.objectStore('players');
+    const req = store.get(id);
+    req.onsuccess = e => {
+      const player = e.target.result;
+      player.name = name;
+      store.put(player).onsuccess = () => resolve();
+    };
+    req.onerror = e => reject(e.target.error);
+    t.onerror = e => reject(e.target.error);
+  });
+}
+
 // ─── Courses ────────────────────────────────────────────────────────────────
 
 export async function getAllCourses() {

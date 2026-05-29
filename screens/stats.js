@@ -1,5 +1,5 @@
 import { getAllPlayers, getAllRounds, getAllCourses } from '../db.js';
-import { computePlayerStats } from '../utils/golf.js';
+import { computePlayerStats, computeHandicap } from '../utils/golf.js';
 
 export async function render(container) {
   const [players, rounds, courses] = await Promise.all([
@@ -17,6 +17,7 @@ export async function render(container) {
 
   function draw() {
     const stats = computePlayerStats(rounds, courseMap, selectedPlayerId);
+    const hcpResult = computeHandicap(rounds, courseMap, selectedPlayerId);
 
     container.innerHTML = `
       <h1>Statistiken</h1>
@@ -29,12 +30,12 @@ export async function render(container) {
         <div style="font-size:24px;font-weight:700">${stats.totalRounds}</div>
       </div>
       <div class="card" style="flex-direction:column;align-items:flex-start;gap:4px;">
-        <div style="font-size:13px;color:var(--text-muted)">Ø Score vs. Par</div>
-        <div style="font-size:24px;font-weight:700">${stats.avgScoreVsPar != null ? (stats.avgScoreVsPar > 0 ? '+' : '') + stats.avgScoreVsPar : '—'}</div>
+        <div style="font-size:13px;color:var(--text-muted)">Handicap</div>
+        <div style="font-size:24px;font-weight:700">${hcpResult.handicap != null ? hcpResult.handicap.toFixed(1) : '—'}</div>
       </div>
 
-      <h2 class="mt-16">Score-Trend</h2>
-      ${trendSVG(stats.roundTrend)}
+      <h2 class="mt-16">Handicap-Trend</h2>
+      ${hcpTrendSVG(hcpResult.history)}
 
       <h2 class="mt-16">Ergebnis-Breakdown</h2>
       ${breakdownHTML(stats.breakdown)}
@@ -49,37 +50,31 @@ export async function render(container) {
   draw();
 }
 
-function trendSVG(trend) {
-  if (trend.length < 2) return '<p class="text-muted">Mindestens 2 vollständige Runden für Trend benötigt.</p>';
+function hcpTrendSVG(history) {
+  if (history.length < 2) return '<p class="text-muted">Mindestens 2 vollständige 18-Loch-Runden für Trend benötigt.</p>';
 
   const W = 320, H = 160, pad = 30;
-  const values = trend.map(r => r.scoreVsPar);
+  const values = history.map(r => r.hcp);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  function x(i) { return pad + (i / (trend.length - 1)) * (W - 2 * pad); }
+  function x(i) { return pad + (i / (history.length - 1)) * (W - 2 * pad); }
   function y(v) { return pad + ((max - v) / range) * (H - 2 * pad); }
 
-  const points = trend.map((r, i) => `${x(i)},${y(r.scoreVsPar)}`).join(' ');
-  const dots = trend.map((r, i) => `
-    <circle cx="${x(i)}" cy="${y(r.scoreVsPar)}" r="4" fill="var(--primary)">
-      <title>${new Date(r.date).toLocaleDateString('de-DE')}: ${r.scoreVsPar > 0 ? '+' : ''}${r.scoreVsPar}</title>
+  const points = history.map((r, i) => `${x(i)},${y(r.hcp)}`).join(' ');
+  const dots = history.map((r, i) => `
+    <circle cx="${x(i)}" cy="${y(r.hcp)}" r="4" fill="var(--primary)">
+      <title>${new Date(r.date).toLocaleDateString('de-DE')}: ${r.hcp.toFixed(1)}</title>
     </circle>
   `).join('');
 
-  const zeroY = y(0);
-  const zeroLine = min <= 0 && max >= 0
-    ? `<line x1="${pad}" y1="${zeroY}" x2="${W - pad}" y2="${zeroY}" stroke="#ccc" stroke-dasharray="4"/>`
-    : '';
-
   return `
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);">
-      ${zeroLine}
       <polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="2"/>
       ${dots}
-      <text x="${pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)">${new Date(trend[0].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
-      <text x="${W - pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)" text-anchor="end">${new Date(trend[trend.length-1].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
+      <text x="${pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)">${new Date(history[0].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
+      <text x="${W - pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)" text-anchor="end">${new Date(history[history.length-1].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
     </svg>
   `;
 }

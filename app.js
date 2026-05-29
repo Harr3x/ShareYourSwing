@@ -2,6 +2,7 @@ import { renderNavBar } from './components/nav-bar.js';
 
 const routes = {
   '#home':      () => import('./screens/home.js'),
+  '#new-round': () => import('./screens/new-round.js'),
   '#play':      () => import('./screens/play.js'),
   '#scorecard': () => import('./screens/scorecard.js'),
   '#stats':     () => import('./screens/stats.js'),
