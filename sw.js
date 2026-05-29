@@ -1,4 +1,4 @@
-const CACHE = 'sys-v2';
+const CACHE = 'sys-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -6,11 +6,13 @@ const ASSETS = [
   './styles.css',
   './db.js',
   './manifest.json',
+  './icon.svg',
   './icon-192.png',
   './icon-512.png',
   './utils/golf.js',
   './components/nav-bar.js',
   './components/score-cell.js',
+  './components/icons.js',
   './screens/home.js',
   './screens/play.js',
   './screens/scorecard.js',

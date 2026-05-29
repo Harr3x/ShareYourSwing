@@ -1,4 +1,5 @@
 import { getAllPlayers, getAllCourses, getAllRounds } from '../db.js';
+import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -14,10 +15,10 @@ export async function render(container) {
   ]);
 
   container.innerHTML = `
-    <h1>ShareYourSwing ⛳</h1>
+    <h1>ShareYourSwing</h1>
     ${!courses.length || !players.length
       ? `<p class="text-muted">Lege zuerst einen Platz und mindestens einen Spieler an.</p>`
-      : `<button class="btn-primary" onclick="location.hash='#new-round'" style="margin-bottom:8px">Neue Runde →</button>`
+      : `<button class="btn-primary" onclick="location.hash='#new-round'" style="margin-bottom:8px">Neue Runde ${icons.chevronRight}</button>`
     }
     <div class="mt-16">
       <h2>Letzte Runden</h2>
@@ -48,7 +49,7 @@ async function recentRoundsHTML(rounds, courses, players) {
             <div style="font-weight:600">${escapeHTML(course?.name ?? '?')}</div>
             <div class="text-muted">${date} · ${escapeHTML(names)} · ${holes} Löcher</div>
           </div>
-          <span style="color:var(--text-muted)">→</span>
+          <span style="color:var(--text-muted);display:flex;align-items:center">${icons.chevronRight}</span>
         </div>
       `;
     }).join('');

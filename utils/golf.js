@@ -120,3 +120,35 @@ export function computePlayerStats(rounds, courses, playerId) {
 
   return { totalRounds: playerRounds.length, avgScoreVsPar, breakdown, roundTrend };
 }
+
+/**
+ * Compute per-par-type breakdown for a player.
+ * Returns: { par3: {eagle,birdie,par,bogey,double,triple}, par4: ..., par5: ... }
+ */
+export function computeBreakdownByPar(rounds, courses, playerId) {
+  const result = {};
+  for (const par of [3, 4, 5]) result['par' + par] = { eagle: 0, birdie: 0, par: 0, bogey: 0, double: 0, triple: 0 };
+
+  const playerRounds = rounds.filter(r => r.playerIds.includes(playerId) && r.scores[playerId]);
+  for (const round of playerRounds) {
+    const course = courses.get(round.courseId);
+    if (!course) continue;
+    const scores = round.scores[playerId];
+    for (let i = 0; i < 18; i++) {
+      const strokes = scores[i];
+      if (strokes == null) continue;
+      const par = course.holes[i].par;
+      const key = 'par' + par;
+      if (!result[key]) continue;
+      const diff = strokes - par;
+      if (diff <= -2)      result[key].eagle++;
+      else if (diff === -1) result[key].birdie++;
+      else if (diff === 0)  result[key].par++;
+      else if (diff === 1)  result[key].bogey++;
+      else if (diff === 2)  result[key].double++;
+      else                  result[key].triple++;
+    }
+  }
+
+  return result;
+}

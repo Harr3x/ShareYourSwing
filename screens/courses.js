@@ -1,4 +1,5 @@
 import { getAllCourses, addCourse, deleteCourse, updateCourse, getCourse } from '../db.js';
+import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -58,7 +59,7 @@ export async function render(container) {
             <div style="font-weight:600">${escapeHTML(c.name)}</div>
             <div class="text-muted">Par ${totalPar} · 18 Bahnen</div>
           </div>
-          <button style="background:none;border:none;font-size:18px;cursor:pointer;padding:8px;min-height:unset;border-radius:50%;" data-edit="${c.id}">✏️</button>
+          <button class="btn-icon" data-edit="${c.id}" aria-label="Bearbeiten">${icons.edit}</button>
         </div>
       `;
     }).join('');
@@ -66,10 +67,10 @@ export async function render(container) {
 
   function showNameStep() {
     showSheet(`
-      <a href="#" id="cancel-form" style="display:inline-block;margin-bottom:16px;color:var(--text-muted);text-decoration:none">← Abbrechen</a>
+      <a href="#" id="cancel-form" style="display:inline-flex;align-items:center;gap:4px;margin-bottom:16px;color:var(--text-muted);text-decoration:none">${icons.chevronLeft} Abbrechen</a>
       <label style="font-weight:600;display:block;margin-bottom:6px">Platzname</label>
-      <input id="course-name" placeholder="z.B. Golfclub Musterstadt" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
-      <button class="btn-primary" id="name-next-btn">Weiter →</button>
+      <input id="course-name" placeholder="z.B. Golfclub Musterstadt" style="margin-bottom:16px;">
+      <button class="btn-primary" id="name-next-btn">Weiter ${icons.chevronRight}</button>
     `);
 
     const sheet = document.getElementById('bottom-sheet');
@@ -90,8 +91,8 @@ export async function render(container) {
 
     function draw() {
       const holeNumber = holeIndex + 1;
-updateSheetContent(`
-        <a href="#" id="cancel-form" style="display:inline-block;margin-bottom:16px;color:var(--text-muted);text-decoration:none">← Abbrechen</a>
+      updateSheetContent(`
+        <a href="#" id="cancel-form" style="display:inline-flex;align-items:center;gap:4px;margin-bottom:16px;color:var(--text-muted);text-decoration:none">${icons.chevronLeft} Abbrechen</a>
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Platz: ${escapeHTML(courseName)}</div>
         <div class="hole-header">
           <div class="hole-number">Bahn ${holeNumber}</div>
@@ -103,7 +104,7 @@ updateSheetContent(`
           <button id="btn-plus">+</button>
         </div>
         <div style="text-align:center;margin-bottom:32px;font-size:14px;color:var(--text-muted);min-height:20px"></div>
-        <button class="btn-primary" id="btn-confirm">Bestätigen ✓</button>
+        <button class="btn-primary" id="btn-confirm">Bestätigen</button>
       `);
 
       const sheet = document.getElementById('bottom-sheet');
@@ -135,7 +136,7 @@ updateSheetContent(`
   function showEditStep(id, currentName) {
     showSheet(`
       <label style="font-weight:600;display:block;margin-bottom:6px">Platzname</label>
-      <input id="edit-course-name" value="${escapeHTML(currentName)}" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
+      <input id="edit-course-name" value="${escapeHTML(currentName)}" style="margin-bottom:16px;">
       <button class="btn-primary" id="save-course-btn">Speichern</button>
       <button class="btn-danger" id="delete-course-btn" style="margin-top:12px;width:100%">Platz löschen</button>
     `);
@@ -160,8 +161,9 @@ updateSheetContent(`
   container.querySelector('#show-form-btn').addEventListener('click', showNameStep);
 
   container.addEventListener('click', async e => {
-    const id = e.target.dataset.edit;
-    if (!id) return;
+    const btn = e.target.closest('[data-edit]');
+    if (!btn) return;
+    const id = btn.dataset.edit;
     const course = await getCourse(id);
     if (course) showEditStep(id, course.name);
   });

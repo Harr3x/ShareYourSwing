@@ -1,5 +1,6 @@
 import { getRound, getCourse, getAllPlayers, saveHoleScore, deleteRound } from '../db.js';
 import { scoreCellHTML } from '../components/score-cell.js';
+import { icons } from '../components/icons.js';
 
 export async function render(container, params) {
   const { roundId } = params;
@@ -41,9 +42,9 @@ export async function render(container, params) {
 
     container.innerHTML = `
       <div class="scorecard-screen">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-          <a href="#home" style="color:var(--text-muted);text-decoration:none">← Home</a>
-          <h1 style="margin:0;flex:1">${course.name}</h1>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <a href="#home" style="display:inline-flex;align-items:center;gap:2px;color:var(--text-muted);text-decoration:none;font-size:14px">${icons.chevronLeft} Home</a>
+          <h1 style="margin:0;flex:1;font-size:20px">${course.name}</h1>
           <button class="btn-danger" id="btn-delete-round" style="padding:6px 14px;min-height:auto;font-size:13px;">Löschen</button>
         </div>
         <div class="scorecard-wrap">
@@ -52,9 +53,9 @@ export async function render(container, params) {
             <tbody>${playerRows}</tbody>
           </table>
         </div>
-        <div style="margin-top:12px;">
-          <a href="#play?roundId=${roundId}&hole=0&player=0" class="btn-primary" style="display:block;text-align:center;padding:14px;text-decoration:none;border-radius:var(--radius);">
-            ▶ Weiter spielen
+        <div style="margin-top:16px;">
+          <a href="#play?roundId=${roundId}&hole=0&player=0" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
+            Weiter spielen ${icons.chevronRight}
           </a>
         </div>
       </div>

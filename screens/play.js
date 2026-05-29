@@ -1,5 +1,6 @@
 import { getRound, getCourse, getAllPlayers, saveHoleScore } from '../db.js';
 import { getScoreClass, getScoreLabel } from '../utils/golf.js';
+import { icons } from '../components/icons.js';
 
 export async function render(container, params) {
   const { roundId } = params;
@@ -34,13 +35,13 @@ export async function render(container, params) {
 
     container.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <button class="btn-ghost" id="btn-back" style="padding:0 14px">← Zurück</button>
+        <button class="btn-ghost" id="btn-back" style="padding:0 14px;display:inline-flex;align-items:center;gap:4px">${icons.chevronLeft} Zurück</button>
         <span style="font-size:13px;color:var(--text-muted)">Spieler ${playerIndex + 1} / ${totalPlayers}</span>
-        <a href="#scorecard?roundId=${roundId}" style="color:var(--text-muted);font-size:13px;text-decoration:none">📊</a>
+        <a href="#scorecard?roundId=${roundId}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:8px" title="Scorecard">${icons.scorecard}</a>
       </div>
 
       <div style="text-align:center;margin-bottom:4px">
-        <div style="font-size:28px;font-weight:700;margin-top:4px">${player.name}</div>
+        <div style="font-size:28px;font-weight:700;margin-top:4px;letter-spacing:-0.5px">${player.name}</div>
       </div>
 
       <div class="hole-header">
@@ -58,7 +59,7 @@ export async function render(container, params) {
 
       <div style="text-align:center;margin-bottom:32px;font-size:14px;color:var(--text-muted);min-height:20px">${label}</div>
 
-      <button class="btn-primary" id="btn-confirm">Bestätigen ✓</button>
+      <button class="btn-primary" id="btn-confirm">Bestätigen</button>
     `;
 
     container.querySelector('#btn-minus').addEventListener('click', () => {
@@ -69,7 +70,7 @@ export async function render(container, params) {
       draw();
     });
     container.querySelector('#btn-confirm').addEventListener('click', async () => {
-      round.scores[round.playerIds[playerIndex]][holeIndex] = currentScore; // keep local copy in sync
+      round.scores[round.playerIds[playerIndex]][holeIndex] = currentScore;
       await saveHoleScore(roundId, round.playerIds[playerIndex], holeIndex, currentScore);
       advance();
     });
@@ -91,7 +92,6 @@ export async function render(container, params) {
       updateHash();
       draw();
     } else {
-      // Round complete
       location.hash = `#scorecard?roundId=${roundId}`;
     }
   }
@@ -99,7 +99,6 @@ export async function render(container, params) {
   function goBack() {
     if (playerIndex > 0) {
       playerIndex--;
-      // Restore previously entered score or default to par
       const prevScore = round.scores[round.playerIds[playerIndex]]?.[holeIndex];
       currentScore = prevScore ?? currentPar();
       updateHash();

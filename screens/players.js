@@ -1,5 +1,6 @@
 import { getAllPlayers, getAllRounds, getAllCourses, addPlayer, deletePlayer, updatePlayer } from '../db.js';
 import { computeHandicap } from '../utils/golf.js';
+import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -60,8 +61,8 @@ export async function render(container) {
       const hcp = computeHandicap(rounds, courseMap, p.id);
       return `
       <div class="card">
-        <span>${escapeHTML(p.name)} <span style="color:var(--text-muted);font-weight:400">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span></span>
-        <button style="background:none;border:none;font-size:18px;cursor:pointer;padding:8px;min-height:unset;border-radius:50%;" data-edit="${p.id}">✏️</button>
+        <span style="font-weight:500">${escapeHTML(p.name)} <span style="color:var(--text-muted);font-weight:400">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span></span>
+        <button class="btn-icon" data-edit="${p.id}" aria-label="Bearbeiten">${icons.edit}</button>
       </div>
     `}).join('');
   }
@@ -69,7 +70,7 @@ export async function render(container) {
   function showAddStep() {
     showSheet(`
       <label style="font-weight:600;display:block;margin-bottom:6px">Spielername</label>
-      <input id="new-player-name" placeholder="Name" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
+      <input id="new-player-name" placeholder="Name" style="margin-bottom:16px;">
       <button class="btn-primary" id="add-player-btn">Hinzufügen</button>
     `);
 
@@ -86,7 +87,7 @@ export async function render(container) {
   function showEditStep(id, currentName) {
     showSheet(`
       <label style="font-weight:600;display:block;margin-bottom:6px">Name</label>
-      <input id="edit-player-name" value="${escapeHTML(currentName)}" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">
+      <input id="edit-player-name" value="${escapeHTML(currentName)}" style="margin-bottom:16px;">
       <button class="btn-primary" id="save-player-btn">Speichern</button>
       <button class="btn-danger" id="delete-player-btn" style="margin-top:12px;width:100%">Spieler löschen</button>
     `);
@@ -111,8 +112,9 @@ export async function render(container) {
   container.querySelector('#show-form-btn').addEventListener('click', showAddStep);
 
   container.addEventListener('click', async e => {
-    const id = e.target.dataset.edit;
-    if (!id) return;
+    const btn = e.target.closest('[data-edit]');
+    if (!btn) return;
+    const id = btn.dataset.edit;
     const player = allPlayers.find(p => p.id === id);
     if (player) showEditStep(id, player.name);
   });

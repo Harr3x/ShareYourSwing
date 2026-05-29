@@ -1,5 +1,5 @@
 import { getAllPlayers, getAllRounds, getAllCourses } from '../db.js';
-import { computePlayerStats, computeHandicap } from '../utils/golf.js';
+import { computePlayerStats, computeHandicap, computeBreakdownByPar } from '../utils/golf.js';
 
 export async function render(container) {
   const [players, rounds, courses] = await Promise.all([
@@ -18,10 +18,11 @@ export async function render(container) {
   function draw() {
     const stats = computePlayerStats(rounds, courseMap, selectedPlayerId);
     const hcpResult = computeHandicap(rounds, courseMap, selectedPlayerId);
+    const byPar = computeBreakdownByPar(rounds, courseMap, selectedPlayerId);
 
     container.innerHTML = `
       <h1>Statistiken</h1>
-      <select id="player-select" style="width:100%;padding:12px;font-size:16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px;">
+      <select id="player-select" style="margin-bottom:20px;">
         ${players.map(p => `<option value="${p.id}" ${p.id === selectedPlayerId ? 'selected' : ''}>${p.name}</option>`).join('')}
       </select>
 
@@ -39,6 +40,9 @@ export async function render(container) {
 
       <h2 class="mt-16">Ergebnis-Breakdown</h2>
       ${breakdownHTML(stats.breakdown)}
+
+      <h2 class="mt-16">Breakdown nach Par</h2>
+      ${breakdownByParHTML(byPar)}
     `;
 
     container.querySelector('#player-select').addEventListener('change', e => {
@@ -70,7 +74,7 @@ function hcpTrendSVG(history) {
   `).join('');
 
   return `
-    <svg viewBox="0 0 ${W} ${H}" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;border:1px solid var(--border-light);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-sm);">
       <polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="2"/>
       ${dots}
       <text x="${pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)">${new Date(history[0].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
@@ -92,7 +96,7 @@ function breakdownHTML(bd) {
     { key: 'triple', label: 'Triple+',       cls: 'golf-triple', color: '#b71c1c' },
   ];
 
-  return items.filter(item => bd[item.key] > 0).map(item => {
+  const rows = items.filter(item => bd[item.key] > 0).map(item => {
     const count = bd[item.key];
     const pct = Math.round((count / total) * 100);
     return `
@@ -106,6 +110,46 @@ function breakdownHTML(bd) {
             <div style="background:${item.color};width:${pct}%;height:8px;border-radius:4px;"></div>
           </div>
         </div>
+      </div>
+    `;
+  }).join('');
+  return `<div class="card" style="flex-direction:column;align-items:stretch;gap:0;">${rows}</div>`;
+}
+
+function breakdownByParHTML(byPar) {
+  const items = [
+    { key: 'eagle',  label: 'Eagle',        cls: 'golf-eagle',  color: '#1565c0' },
+    { key: 'birdie', label: 'Birdie',        cls: 'golf-birdie', color: '#2e7d32' },
+    { key: 'par',    label: 'Par',           cls: 'golf-par',    color: '#555' },
+    { key: 'bogey',  label: 'Bogey',         cls: 'golf-bogey',  color: '#f57f17' },
+    { key: 'double', label: 'Double Bogey',  cls: 'golf-double', color: '#bf360c' },
+    { key: 'triple', label: 'Triple+',       cls: 'golf-triple', color: '#b71c1c' },
+  ];
+
+return [3, 4, 5].map(par => {
+    const bd = byPar['par' + par];
+    const total = Object.values(bd).reduce((s, v) => s + v, 0);
+    if (!total) return '';
+    return `
+      <div class="card" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div style="font-weight:600">Par ${par}</div>
+        ${items.filter(item => bd[item.key] > 0).map(item => {
+        const count = bd[item.key];
+        const pct = Math.round((count / total) * 100);
+        return `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <span class="${item.cls}" style="flex-shrink:0;font-size:12px;width:24px;height:24px;">${pct}%</span>
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
+                <span>${item.label}</span><span>${count}×</span>
+              </div>
+              <div style="background:var(--border);border-radius:4px;height:6px;">
+                <div style="background:${item.color};width:${pct}%;height:6px;border-radius:4px;"></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
       </div>
     `;
   }).join('');
