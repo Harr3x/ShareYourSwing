@@ -137,6 +137,11 @@ export async function getAllRounds() {
   return tx(db, ['rounds'], 'readonly', t => getAll(t.objectStore('rounds')));
 }
 
+export async function deleteRound(id) {
+  const db = await openDB();
+  return tx(db, ['rounds'], 'readwrite', t => del(t.objectStore('rounds'), id));
+}
+
 export async function saveHoleScore(roundId, playerId, holeIndex, strokes) {
   const db = await openDB();
   return new Promise((resolve, reject) => {

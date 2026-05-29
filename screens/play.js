@@ -33,19 +33,19 @@ export async function render(container, params) {
     const totalPlayers = roundPlayers.length;
 
     container.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <button class="btn-ghost" id="btn-back" style="padding:0 14px">← Zurück</button>
-        <span class="text-muted">Bahn ${holeIndex + 1} / 18</span>
+        <span style="font-size:13px;color:var(--text-muted)">Spieler ${playerIndex + 1} / ${totalPlayers}</span>
         <a href="#scorecard?roundId=${roundId}" style="color:var(--text-muted);font-size:13px;text-decoration:none">📊</a>
       </div>
 
-      <div style="text-align:center;margin-bottom:8px">
-        <div style="font-size:14px;color:var(--text-muted)">Spieler ${playerIndex + 1} von ${totalPlayers}</div>
+      <div style="text-align:center;margin-bottom:4px">
         <div style="font-size:28px;font-weight:700;margin-top:4px">${player.name}</div>
       </div>
 
-      <div style="text-align:center;background:var(--surface);border-radius:var(--radius);padding:12px 0;margin-bottom:24px;">
-        <div style="font-size:13px;color:var(--text-muted)">Par ${par}</div>
+      <div class="hole-header">
+        <div class="hole-number">Bahn ${holeIndex + 1}</div>
+        <div class="par-badge">Par ${par}</div>
       </div>
 
       <div class="score-counter" style="justify-content:center;margin-bottom:8px;">

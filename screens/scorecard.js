@@ -1,4 +1,4 @@
-import { getRound, getCourse, getAllPlayers, saveHoleScore } from '../db.js';
+import { getRound, getCourse, getAllPlayers, saveHoleScore, deleteRound } from '../db.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 
 export async function render(container, params) {
@@ -40,22 +40,31 @@ export async function render(container, params) {
     }).join('');
 
     container.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <a href="#home" style="color:var(--text-muted);text-decoration:none">← Home</a>
-        <h1 style="margin:0">${course.name}</h1>
-      </div>
-      <div class="scorecard-wrap">
-        <table class="scorecard">
-          <thead><tr><th>Spieler</th>${headerCells}<th>Total</th><th>+/−</th></tr>${parRow}</thead>
-          <tbody>${playerRows}</tbody>
-        </table>
-      </div>
-      <div class="mt-16">
-        <a href="#play?roundId=${roundId}&hole=0&player=0" class="btn-primary" style="display:block;text-align:center;padding:14px;text-decoration:none;border-radius:var(--radius);">
-          ▶ Weiter spielen
-        </a>
+      <div class="scorecard-screen">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <a href="#home" style="color:var(--text-muted);text-decoration:none">← Home</a>
+          <h1 style="margin:0;flex:1">${course.name}</h1>
+          <button class="btn-danger" id="btn-delete-round" style="padding:6px 14px;min-height:auto;font-size:13px;">Löschen</button>
+        </div>
+        <div class="scorecard-wrap">
+          <table class="scorecard">
+            <thead><tr><th>Spieler</th>${headerCells}<th>Total</th><th>+/−</th></tr>${parRow}</thead>
+            <tbody>${playerRows}</tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;">
+          <a href="#play?roundId=${roundId}&hole=0&player=0" class="btn-primary" style="display:block;text-align:center;padding:14px;text-decoration:none;border-radius:var(--radius);">
+            ▶ Weiter spielen
+          </a>
+        </div>
       </div>
     `;
+
+    container.querySelector('#btn-delete-round')?.addEventListener('click', async () => {
+      if (!confirm('Runde wirklich löschen?')) return;
+      await deleteRound(roundId);
+      location.hash = '#home';
+    });
 
     container.querySelectorAll('[data-hole]').forEach(cell => {
       cell.addEventListener('click', async () => {

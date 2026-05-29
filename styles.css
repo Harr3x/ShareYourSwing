@@ -178,3 +178,45 @@ h2 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
 .text-muted { color: var(--text-muted); font-size: 13px; }
 .row { display: flex; gap: 10px; }
 .spacer { flex: 1; }
+
+.hole-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.hole-number {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.par-badge {
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--primary);
+  color: var(--primary-text);
+  padding: 6px 16px;
+  border-radius: 999px;
+}
+
+.scorecard-screen {
+  max-width: 100%;
+}
+
+@media (orientation: landscape) {
+  .scorecard-screen {
+    width: 100%;
+  }
+  .scorecard-wrap {
+    overflow-x: visible;
+  }
+  .scorecard {
+    min-width: 100%;
+    font-size: 14px;
+  }
+  .scorecard th, .scorecard td {
+    padding: 8px 6px;
+  }
+}
