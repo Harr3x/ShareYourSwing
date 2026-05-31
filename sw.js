@@ -1,4 +1,4 @@
-const CACHE = 'sys-v5';
+const CACHE = 'sys-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -41,6 +41,8 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Only cache same-origin requests; let external requests (fonts, CDN, Supabase) pass through
+  if (new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     caches.match(e.request).then(cached => cached ?? fetch(e.request))
   );
