@@ -7,9 +7,8 @@ const tabs = [
   { hash: '#home',    icon: icons.home,    label: 'Home' },
   { hash: '#stats',   icon: icons.stats,   label: 'Stats' },
   { hash: '#courses', icon: icons.courses, label: 'Plätze' },
-  { hash: '#players', icon: icons.players, label: 'Spieler' },
+  { hash: '#players', icon: friendsIcon,   label: 'Spieler' },
   { hash: '#feed',    icon: feedIcon,      label: 'Feed' },
-  { hash: '#friends', icon: friendsIcon,   label: 'Freunde' },
 ];
 
 export function renderNavBar(nav, activeHash) {

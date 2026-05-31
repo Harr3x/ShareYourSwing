@@ -12,7 +12,6 @@ const routes = {
   '#courses':   () => import('./screens/courses.js'),
   '#players':   () => import('./screens/players.js'),
   '#login':     () => import('./screens/login.js'),
-  '#friends':   () => import('./screens/friends.js'),
   '#feed':      () => import('./screens/feed.js'),
 };
 
