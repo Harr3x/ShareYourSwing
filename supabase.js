@@ -14,7 +14,11 @@ export async function getCurrentUser() {
 }
 
 export async function signUp(email, password, username) {
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { username } },
+  });
   if (error) throw error;
   const { error: profileError } = await supabase
     .from('profiles')
@@ -87,6 +91,52 @@ export async function getFriends() {
   });
 }
 
+export async function getMyProfile() {
+  const user = await getCurrentUser();
+  const { data, error } = await supabase.from('profiles').select('id, username, is_admin').eq('id', user.id).single();
+  if (error) console.error('getMyProfile:', error.message);
+  return data || { id: user.id, username: user.user_metadata?.username, is_admin: false };
+}
+
+export async function getCourses() {
+  const { data, error } = await supabase.from('courses').select('id, name, holes').order('name');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getCourse(id) {
+  const { data, error } = await supabase.from('courses').select('id, name, holes').eq('id', id).single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getCloudRound(roundId) {
+  const { data, error } = await supabase
+    .from('cloud_rounds')
+    .select('id, course_name, holes, date, round_participants(user_id, display_name, scores)')
+    .eq('id', roundId)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function addCourse(name, holes) {
+  const user = await getCurrentUser();
+  const { data, error } = await supabase.from('courses').insert({ name, holes, created_by: user.id }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateCourse(course) {
+  const { error } = await supabase.from('courses').update({ name: course.name, holes: course.holes }).eq('id', course.id);
+  if (error) throw error;
+}
+
+export async function deleteCourse(id) {
+  const { error } = await supabase.from('courses').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function findProfileByUsername(username) {
   const { data, error } = await supabase
     .from('profiles')
@@ -134,6 +184,64 @@ export async function acceptFriendRequest(friendshipId) {
     .update({ status: 'accepted' })
     .eq('id', friendshipId);
   if (error) throw error;
+}
+
+export async function removeFriend(friendshipId) {
+  const { error } = await supabase.from('friendships').delete().eq('id', friendshipId);
+  if (error) throw error;
+}
+
+export async function getUserRounds() {
+  const user = await getCurrentUser();
+  const { data, error } = await supabase
+    .from('round_participants')
+    .select(`
+      scores,
+      cloud_rounds!inner(id, holes, date)
+    `)
+    .eq('user_id', user.id);
+  if (error) throw error;
+  return (data || []).map(p => ({
+    courseId: p.cloud_rounds.id,
+    playerIds: [user.id],
+    scores: { [user.id]: p.scores },
+    holes: p.cloud_rounds.holes,
+    date: p.cloud_rounds.date,
+  }));
+}
+
+export async function getCloudRoundsForPlayers(playerIds) {
+  if (!playerIds.length) return { rounds: [], courseMap: new Map() };
+
+  const { data: mine } = await supabase
+    .from('round_participants')
+    .select('round_id')
+    .in('user_id', playerIds);
+
+  const roundIds = [...new Set((mine || []).map(p => p.round_id))];
+  if (!roundIds.length) return { rounds: [], courseMap: new Map() };
+
+  const { data, error } = await supabase
+    .from('round_participants')
+    .select('round_id, user_id, scores, cloud_rounds(id, course_name, holes, date)')
+    .in('round_id', roundIds);
+  if (error) throw error;
+
+  const roundMap = new Map();
+  const courseMap = new Map();
+
+  for (const p of (data || [])) {
+    const cr = p.cloud_rounds;
+    if (!courseMap.has(cr.id))
+      courseMap.set(cr.id, { id: cr.id, name: cr.course_name, holes: cr.holes });
+    if (!roundMap.has(p.round_id))
+      roundMap.set(p.round_id, { courseId: cr.id, playerIds: [], scores: {}, date: cr.date });
+    const round = roundMap.get(p.round_id);
+    round.playerIds.push(p.user_id);
+    round.scores[p.user_id] = p.scores;
+  }
+
+  return { rounds: [...roundMap.values()], courseMap };
 }
 
 export async function getFeedRounds() {

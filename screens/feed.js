@@ -19,6 +19,8 @@ export async function render(container) {
   feedEl.innerHTML = rounds.map(round => {
     const participants = round.round_participants || [];
     const scorer = round['profiles!cloud_rounds_created_by_fkey'];
+    const creatorParticipant = participants.find(p => p.user_id === round.created_by);
+    const creatorName = scorer?.username ?? creatorParticipant?.display_name ?? 'Unbekannt';
     const date = new Date(round.date).toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
     const isMe = round.created_by === me.id;
 
@@ -28,11 +30,11 @@ export async function render(container) {
     }).join('');
 
     return `
-      <div style="background:white;border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="background:white;border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;cursor:pointer" onclick="location.hash='#cloud-scorecard?roundId=${round.id}'">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
           <div>
             <div style="font-weight:600">${round.course_name}</div>
-            <div style="font-size:.85rem;color:#666;margin-top:2px">${isMe ? 'Du' : '@' + scorer?.username} · ${date}</div>
+            <div style="font-size:.85rem;color:#666;margin-top:2px">${isMe ? 'Du' : '@' + creatorName} · ${date}</div>
           </div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px">${participantRows}</div>

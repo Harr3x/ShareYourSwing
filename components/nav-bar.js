@@ -6,7 +6,6 @@ const friendsIcon = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"
 const tabs = [
   { hash: '#home',    icon: icons.home,    label: 'Home' },
   { hash: '#stats',   icon: icons.stats,   label: 'Stats' },
-  { hash: '#courses', icon: icons.courses, label: 'Plätze' },
   { hash: '#players', icon: friendsIcon,   label: 'Spieler' },
   { hash: '#feed',    icon: feedIcon,      label: 'Feed' },
 ];

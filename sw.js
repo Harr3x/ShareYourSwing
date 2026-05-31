@@ -1,4 +1,4 @@
-const CACHE = 'sys-v6';
+const CACHE = 'sys-v19';
 const ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,7 @@ const ASSETS = [
   './screens/new-round.js',
   './screens/login.js',
   './screens/feed.js',
+  './screens/cloud-scorecard.js',
 ];
 
 self.addEventListener('install', e => {

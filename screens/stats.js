@@ -1,57 +1,46 @@
-import { getAllPlayers, getAllRounds, getAllCourses } from '../db.js';
+import { getCurrentUser, getUserRounds } from '../supabase.js';
 import { computePlayerStats, computeHandicap, computeBreakdownByPar } from '../utils/golf.js';
 
 export async function render(container) {
-  const [players, rounds, courses] = await Promise.all([
-    getAllPlayers(), getAllRounds(), getAllCourses()
-  ]);
+  const user = await getCurrentUser();
+  if (!user) {
+    container.innerHTML = '<h1>Statistiken</h1><p class="text-muted">Bitte einloggen um deine Statistiken zu sehen.</p>';
+    return;
+  }
 
-  const courseMap = new Map(courses.map(c => [c.id, c]));
+  const rounds = await getUserRounds();
+  const courseMap = new Map(rounds.map(r => [r.courseId, { holes: r.holes }]));
 
-  if (!players.length || !rounds.length) {
+  if (!rounds.length) {
     container.innerHTML = '<h1>Statistiken</h1><p class="text-muted">Noch keine Rundendaten vorhanden.</p>';
     return;
   }
 
-  let selectedPlayerId = players[0].id;
+  const stats = computePlayerStats(rounds, courseMap, user.id);
+  const hcpResult = computeHandicap(rounds, courseMap, user.id);
+  const byPar = computeBreakdownByPar(rounds, courseMap, user.id);
 
-  function draw() {
-    const stats = computePlayerStats(rounds, courseMap, selectedPlayerId);
-    const hcpResult = computeHandicap(rounds, courseMap, selectedPlayerId);
-    const byPar = computeBreakdownByPar(rounds, courseMap, selectedPlayerId);
+  container.innerHTML = `
+    <h1>Statistiken</h1>
 
-    container.innerHTML = `
-      <h1>Statistiken</h1>
-      <select id="player-select" style="margin-bottom:20px;">
-        ${players.map(p => `<option value="${p.id}" ${p.id === selectedPlayerId ? 'selected' : ''}>${p.name}</option>`).join('')}
-      </select>
+    <div class="card" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div style="font-size:13px;color:var(--text-muted)">Gespielte Runden</div>
+      <div style="font-size:24px;font-weight:700">${stats.totalRounds}</div>
+    </div>
+    <div class="card" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div style="font-size:13px;color:var(--text-muted)">Handicap</div>
+      <div style="font-size:24px;font-weight:700">${hcpResult.handicap != null ? hcpResult.handicap.toFixed(1) : '—'}</div>
+    </div>
 
-      <div class="card" style="flex-direction:column;align-items:flex-start;gap:4px;">
-        <div style="font-size:13px;color:var(--text-muted)">Gespielte Runden</div>
-        <div style="font-size:24px;font-weight:700">${stats.totalRounds}</div>
-      </div>
-      <div class="card" style="flex-direction:column;align-items:flex-start;gap:4px;">
-        <div style="font-size:13px;color:var(--text-muted)">Handicap</div>
-        <div style="font-size:24px;font-weight:700">${hcpResult.handicap != null ? hcpResult.handicap.toFixed(1) : '—'}</div>
-      </div>
+    <h2 class="mt-16">Handicap-Trend</h2>
+    ${hcpTrendSVG(hcpResult.history)}
 
-      <h2 class="mt-16">Handicap-Trend</h2>
-      ${hcpTrendSVG(hcpResult.history)}
+    <h2 class="mt-16">Ergebnis-Breakdown</h2>
+    ${breakdownHTML(stats.breakdown)}
 
-      <h2 class="mt-16">Ergebnis-Breakdown</h2>
-      ${breakdownHTML(stats.breakdown)}
-
-      <h2 class="mt-16">Breakdown nach Par</h2>
-      ${breakdownByParHTML(byPar)}
-    `;
-
-    container.querySelector('#player-select').addEventListener('change', e => {
-      selectedPlayerId = e.target.value;
-      draw();
-    });
-  }
-
-  draw();
+    <h2 class="mt-16">Breakdown nach Par</h2>
+    ${breakdownByParHTML(byPar)}
+  `;
 }
 
 function hcpTrendSVG(history) {

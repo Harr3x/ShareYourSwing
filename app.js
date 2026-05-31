@@ -12,7 +12,8 @@ const routes = {
   '#courses':   () => import('./screens/courses.js'),
   '#players':   () => import('./screens/players.js'),
   '#login':     () => import('./screens/login.js'),
-  '#feed':      () => import('./screens/feed.js'),
+  '#feed':            () => import('./screens/feed.js'),
+  '#cloud-scorecard': () => import('./screens/cloud-scorecard.js'),
 };
 
 function parseHash() {

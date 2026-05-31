@@ -1,4 +1,4 @@
-import { getAllCourses, addCourse, deleteCourse, updateCourse, getCourse } from '../db.js';
+import { getCourses, addCourse, deleteCourse, updateCourse, getCourse, getMyProfile } from '../supabase.js';
 import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
@@ -10,10 +10,13 @@ function escapeHTML(str) {
 }
 
 export async function render(container) {
+  const profile = await getMyProfile();
+  const isAdmin = profile?.is_admin ?? false;
+
   container.innerHTML = `
     <h1>Plätze</h1>
     <div id="course-list"></div>
-    <button class="btn-primary" id="show-form-btn" style="margin-top:16px">Neuer Platz</button>
+    ${isAdmin ? '<button class="btn-primary" id="show-form-btn" style="margin-top:16px">Neuer Platz</button>' : ''}
   `;
 
   function closeSheet() {
@@ -45,7 +48,7 @@ export async function render(container) {
   }
 
   async function refresh() {
-    const courses = await getAllCourses();
+    const courses = await getCourses();
     const list = container.querySelector('#course-list');
     if (!courses.length) {
       list.innerHTML = '<p class="text-muted">Noch keine Plätze.</p>';
@@ -59,7 +62,7 @@ export async function render(container) {
             <div style="font-weight:600">${escapeHTML(c.name)}</div>
             <div class="text-muted">Par ${totalPar} · 18 Bahnen</div>
           </div>
-          <button class="btn-icon" data-edit="${c.id}" aria-label="Bearbeiten">${icons.edit}</button>
+          ${isAdmin ? `<button class="btn-icon" data-edit="${c.id}" aria-label="Bearbeiten">${icons.edit}</button>` : ''}
         </div>
       `;
     }).join('');
@@ -166,7 +169,7 @@ export async function render(container) {
 
   await refresh();
 
-  container.querySelector('#show-form-btn').addEventListener('click', showNameStep);
+  if (isAdmin) container.querySelector('#show-form-btn').addEventListener('click', showNameStep);
 
   container.addEventListener('click', async e => {
     const btn = e.target.closest('[data-edit]');
