@@ -1,6 +1,7 @@
 import { getRound, getCourse, getAllPlayers, saveHoleScore, deleteRound } from '../db.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
+import { publishRound, getFriends, getCurrentUser } from '../supabase.js';
 
 export async function render(container, params) {
   const { roundId } = params;
@@ -84,4 +85,81 @@ export async function render(container, params) {
   }
 
   draw();
+
+  // Share button
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'btn-primary';
+  shareBtn.textContent = 'Runde teilen';
+  shareBtn.style.cssText = 'display:block;margin:24px auto;padding:12px 32px;font-size:1rem';
+  container.querySelector('.scorecard-screen').appendChild(shareBtn);
+
+  shareBtn.addEventListener('click', async () => {
+    shareBtn.disabled = true;
+    shareBtn.textContent = 'Wird geteilt...';
+    try {
+      const me = await getCurrentUser();
+      const friends = await getFriends();
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+      modal.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:24px;width:90%;max-width:400px">
+          <h3 style="margin-bottom:16px">Spieler verknüpfen</h3>
+          <p style="font-size:.9rem;color:#666;margin-bottom:16px">Welcher Spieler hat welchen Account?</p>
+          ${round.playerIds.map(pid => {
+            const player = players.find(p => p.id === pid);
+            const friendOptions = friends.map(f =>
+              `<option value="${f.userId}">${f.username}</option>`
+            ).join('');
+            return `
+              <div style="margin-bottom:12px">
+                <label style="font-weight:600">${player?.name || pid}</label>
+                <select data-player="${pid}" style="display:block;width:100%;margin-top:4px;padding:8px;border:1px solid #e2e8f0;border-radius:8px">
+                  <option value="${me.id}">(Ich)</option>
+                  ${friendOptions}
+                  <option value="__skip">Nicht verknüpfen</option>
+                </select>
+              </div>
+            `;
+          }).join('')}
+          <div style="display:flex;gap:8px;margin-top:20px">
+            <button id="modal-cancel" style="flex:1;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:white;cursor:pointer">Abbrechen</button>
+            <button id="modal-confirm" class="btn-primary" style="flex:1">Teilen</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      modal.querySelector('#modal-cancel').addEventListener('click', () => {
+        document.body.removeChild(modal);
+        shareBtn.disabled = false;
+        shareBtn.textContent = 'Runde teilen';
+      });
+
+      modal.querySelector('#modal-confirm').addEventListener('click', async () => {
+        const participantMap = round.playerIds
+          .map(pid => {
+            const sel = modal.querySelector(`select[data-player="${pid}"]`);
+            if (!sel || sel.value === '__skip') return null;
+            const player = players.find(p => p.id === pid);
+            return { userId: sel.value, displayName: player?.name || pid, scores: round.scores[pid] };
+          })
+          .filter(Boolean);
+
+        document.body.removeChild(modal);
+        try {
+          await publishRound(course, round.date, participantMap);
+          shareBtn.textContent = '✓ Geteilt!';
+        } catch (err) {
+          shareBtn.textContent = 'Fehler – nochmal versuchen';
+          shareBtn.disabled = false;
+          console.error(err);
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      shareBtn.textContent = 'Fehler';
+      shareBtn.disabled = false;
+    }
+  });
 }
