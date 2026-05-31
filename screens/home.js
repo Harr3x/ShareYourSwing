@@ -1,4 +1,5 @@
-import { getAllPlayers, getAllCourses, getAllRounds } from '../db.js';
+import { getAllPlayers, getAllRounds } from '../db.js';
+import { getCourses, getCurrentUser } from '../supabase.js';
 import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
@@ -10,13 +11,16 @@ function escapeHTML(str) {
 }
 
 export async function render(container) {
-  const [players, courses, rounds] = await Promise.all([
-    getAllPlayers(), getAllCourses(), getAllRounds()
+  const [user, players, courses, rounds] = await Promise.all([
+    getCurrentUser(), getAllPlayers(), getCourses(), getAllRounds()
   ]);
 
   container.innerHTML = `
-    <h1>ShareYourSwing</h1>
-    ${!courses.length || !players.length
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <h1 style="margin:0">ShareYourSwing</h1>
+      <a href="#courses" style="color:var(--text-muted);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);box-shadow:var(--shadow-sm);" title="Plätze">${icons.courses}</a>
+    </div>
+    ${!courses.length || !user
       ? `<p class="text-muted">Lege zuerst einen Platz und mindestens einen Spieler an.</p>`
       : `<button class="btn-primary" onclick="location.hash='#new-round'" style="margin-bottom:8px">Neue Runde ${icons.chevronRight}</button>`
     }

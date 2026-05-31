@@ -1,4 +1,5 @@
-import { getRound, getCourse, getAllPlayers, saveHoleScore } from '../db.js';
+import { getRound, getAllPlayers, saveHoleScore } from '../db.js';
+import { getCourse } from '../supabase.js';
 import { getScoreClass, getScoreLabel } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 
@@ -220,10 +221,14 @@ export async function render(container, params) {
 
   // ── Init ─────────────────────────────────────────────────────
 
+  // Tag this session so stale listeners from previous rounds self-disable
+  container.dataset.playSession = roundId;
+
   initScores();
   draw();
 
   container.addEventListener('click', e => {
+    if (container.dataset.playSession !== roundId) return;
     if (e.target.closest('#btn-back')) { goBack(); return; }
     if (e.target.closest('#btn-confirm')) { advance(); return; }
     if (e.target.closest('#btn-hole-overview')) { showHoleOverview(); return; }
@@ -242,9 +247,9 @@ export async function render(container, params) {
     }
   });
 
-  // Delegated from body for the sheet (outside container); self-removes on unmount
+  // Delegated from body for the sheet (outside container); self-removes when session changes
   document.addEventListener('click', function onJump(e) {
-    if (!document.contains(container)) {
+    if (container.dataset.playSession !== roundId) {
       document.removeEventListener('click', onJump);
       return;
     }

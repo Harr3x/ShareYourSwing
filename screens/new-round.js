@@ -1,4 +1,5 @@
-import { getAllPlayers, getAllCourses, addRound } from '../db.js';
+import { getAllPlayers, putPlayer, addRound } from '../db.js';
+import { getCourses, getMyProfile } from '../supabase.js';
 import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
@@ -10,9 +11,12 @@ function escapeHTML(str) {
 }
 
 export async function render(container) {
-  const [players, courses] = await Promise.all([
-    getAllPlayers(), getAllCourses()
-  ]);
+  const [courses, profile] = await Promise.all([getCourses(), getMyProfile()]);
+
+  // Ensure current user exists as local player
+  if (profile) await putPlayer({ id: profile.id, name: profile.username ?? profile.email });
+
+  const players = await getAllPlayers();
 
   if (!courses.length || !players.length) {
     container.innerHTML = `
@@ -34,19 +38,27 @@ export async function render(container) {
     <div id="player-checks" style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">
       ${players.map(p => `
         <label style="display:flex;align-items:center;gap:12px;font-size:16px;padding:12px 14px;background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius);box-shadow:var(--shadow-sm);cursor:pointer;">
-          <input type="checkbox" class="player-check" value="${p.id}" style="width:18px;height:18px;accent-color:var(--primary);flex-shrink:0;">
+          <input type="checkbox" class="player-check" value="${p.id}" ${p.id === profile?.id ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--primary);flex-shrink:0;">
           ${escapeHTML(p.name)}
         </label>
       `).join('')}
     </div>
+    <p id="start-error" style="color:var(--danger,#e53e3e);font-size:14px;min-height:20px;margin:0;"></p>
     <button class="btn-primary" id="start-round-btn">Runde starten ${icons.chevronRight}</button>
   `;
 
   container.querySelector('#start-round-btn').addEventListener('click', async () => {
+    const errorEl = container.querySelector('#start-error');
+    errorEl.textContent = '';
     const courseId = container.querySelector('#select-course').value;
     const checked = [...container.querySelectorAll('.player-check:checked')].map(el => el.value);
-    if (!checked.length) { alert('Mindestens einen Spieler wählen.'); return; }
-    const round = await addRound(courseId, checked);
-    location.hash = `#play?roundId=${round.id}&hole=0`;
+    if (!checked.length) { errorEl.textContent = 'Mindestens einen Spieler auswählen.'; return; }
+    try {
+      const round = await addRound(courseId, checked);
+      location.hash = `#play?roundId=${round.id}&hole=0`;
+    } catch (err) {
+      console.error('addRound failed:', err);
+      errorEl.textContent = `Fehler: ${err.message ?? err}`;
+    }
   });
 }

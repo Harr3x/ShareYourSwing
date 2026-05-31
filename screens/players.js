@@ -1,6 +1,7 @@
-import { getAllPlayers, getAllRounds, getAllCourses, addPlayer, deletePlayer, updatePlayer } from '../db.js';
+import { getAllPlayers, addPlayer, deletePlayer, updatePlayer, putPlayer } from '../db.js';
 import { computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
+import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getMyProfile, getCloudRoundsForPlayers } from '../supabase.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -34,24 +35,27 @@ function computeBirdieStats(rounds, courseMap, playerId) {
 }
 
 function computeCourseRecords(rounds, courseMap, playerId) {
-  const records = [];
-  const courseIds = [...new Set(rounds.map(r => r.courseId))];
-  for (const courseId of courseIds) {
-    const course = courseMap.get(courseId);
+  // Group by course name — courseId = cloud_rounds.id (unique per round, not per course)
+  const byCourse = new Map();
+  for (const r of rounds) {
+    const course = courseMap.get(r.courseId);
     if (!course) continue;
-    let best = Infinity, holders = [];
-    for (const r of rounds.filter(r => r.courseId === courseId)) {
-      for (const pid of r.playerIds) {
-        const scores = r.scores[pid];
-        if (!scores || scores.some(s => s == null)) continue;
-        const total = scores.reduce((s, v) => s + v, 0);
-        if (total < best) { best = total; holders = [pid]; }
-        else if (total === best && !holders.includes(pid)) holders.push(pid);
-      }
+    if (!byCourse.has(course.name)) byCourse.set(course.name, { course, results: [] });
+    for (const pid of r.playerIds) {
+      const scores = r.scores[pid];
+      if (!scores || scores.some(s => s == null)) continue;
+      byCourse.get(course.name).results.push({ date: r.date, pid, total: scores.reduce((s, v) => s + v, 0) });
     }
-    if (holders.includes(playerId) && best < Infinity) {
-      records.push({ name: course.name, score: best });
+  }
+
+  const records = [];
+  for (const { course, results } of byCourse.values()) {
+    results.sort((a, b) => a.date.localeCompare(b.date));
+    let recordScore = Infinity, recordHolder = null;
+    for (const { pid, total } of results) {
+      if (total < recordScore) { recordScore = total; recordHolder = pid; }
     }
+    if (recordHolder === playerId) records.push({ name: course.name, score: recordScore });
   }
   return records;
 }
@@ -75,15 +79,41 @@ function achievementChips(birdieStats, records) {
 }
 
 export async function render(container) {
-  const [allPlayers, rounds, courses] = await Promise.all([
-    getAllPlayers(), getAllRounds(), getAllCourses()
+  const [allPlayers, currentUser, friends] = await Promise.all([
+    getAllPlayers(), getCurrentUser(), getFriends()
   ]);
-  const courseMap = new Map(courses.map(c => [c.id, c]));
+
+  // Auto-add logged-in user as local player if not already present
+  if (currentUser && !allPlayers.find(p => p.id === currentUser.id)) {
+    const profile = await getMyProfile();
+    await putPlayer({ id: currentUser.id, name: profile?.username || currentUser.email });
+  }
+
+  const friendIds = friends.map(f => f.userId);
+  const { rounds, courseMap } = await getCloudRoundsForPlayers(
+    currentUser ? [currentUser.id, ...friendIds] : friendIds
+  );
 
   container.innerHTML = `
-    <h1>Spieler</h1>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h1 style="margin:0">Spieler</h1>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="add-friend-btn" class="btn-icon" aria-label="Freund hinzufügen" title="Freund hinzufügen">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+            <line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/>
+          </svg>
+        </button>
+        <button id="logout-btn" class="btn-icon" aria-label="Abmelden" title="Abmelden">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
     <div id="player-list"></div>
-    <button class="btn-primary" id="show-form-btn" style="margin-top:16px">Spieler hinzufügen</button>
+    <div id="friends-section"></div>
   `;
 
   function closeSheet() {
@@ -115,74 +145,125 @@ export async function render(container) {
   }
 
   async function refresh() {
-    const players = await getAllPlayers();
+    const [players, friends, pending] = await Promise.all([
+      getAllPlayers(), getFriends(), getPendingRequests()
+    ]);
+
+    // Valid IDs = current user + accepted friends (all Supabase UUIDs)
+    const validIds = new Set([
+      ...(currentUser ? [currentUser.id] : []),
+      ...friends.map(f => f.userId),
+    ]);
+
+    // Remove stale local players (old random UUIDs from pre-cloud state)
+    const stale = players.filter(p => !validIds.has(p.id));
+    if (stale.length > 0) await Promise.all(stale.map(p => deletePlayer(p.id)));
+
+    // Auto-add accepted friends not yet in local DB
+    const localPlayerIds = new Set(players.map(p => p.id));
+    const newFriends = friends.filter(f => !localPlayerIds.has(f.userId));
+    if (newFriends.length > 0) {
+      await Promise.all(newFriends.map(f => putPlayer({ id: f.userId, name: f.username })));
+    }
+    const allP = (stale.length > 0 || newFriends.length > 0) ? await getAllPlayers() : players;
+    const friendMap = new Map(friends.map(f => [f.userId, f.friendshipId]));
+
     const list = container.querySelector('#player-list');
-    if (!players.length) {
+    if (!allP.length) {
       list.innerHTML = '<p class="text-muted">Noch keine Spieler.</p>';
-      return;
+    } else {
+      const sorted = [...allP].sort((a, b) => {
+        const ha = computeHandicap(rounds, courseMap, a.id).handicap;
+        const hb = computeHandicap(rounds, courseMap, b.id).handicap;
+        if (ha == null && hb == null) return 0;
+        if (ha == null) return 1;
+        if (hb == null) return -1;
+        return ha - hb;
+      });
+
+      list.innerHTML = sorted.map(p => {
+        const isMe = p.id === currentUser?.id;
+        const hcp = computeHandicap(rounds, courseMap, p.id);
+        const birdieStats = computeBirdieStats(rounds, courseMap, p.id);
+        const records = computeCourseRecords(rounds, courseMap, p.id);
+        const chips = achievementChips(birdieStats, records);
+        const friendshipId = friendMap.get(p.id) || '';
+        return `
+          <div class="card" style="align-items:flex-start;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600">
+                ${escapeHTML(p.name)}
+                ${isMe ? '<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:500;vertical-align:middle">Du</span>' : ''}
+                <span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span>
+              </div>
+              ${chips ? `<div class="achievement-row">${chips}</div>` : ''}
+            </div>
+            ${!isMe ? `<button class="btn-icon" data-edit="${p.id}" data-friendship-id="${friendshipId}" aria-label="Optionen" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>` : ''}
+          </div>
+        `;
+      }).join('');
     }
 
-    const sorted = [...players].sort((a, b) => {
-      const ha = computeHandicap(rounds, courseMap, a.id).handicap;
-      const hb = computeHandicap(rounds, courseMap, b.id).handicap;
-      if (ha == null && hb == null) return 0;
-      if (ha == null) return 1;
-      if (hb == null) return -1;
-      return ha - hb;
-    });
-
-    list.innerHTML = sorted.map(p => {
-      const hcp = computeHandicap(rounds, courseMap, p.id);
-      const birdieStats = computeBirdieStats(rounds, courseMap, p.id);
-      const records = computeCourseRecords(rounds, courseMap, p.id);
-      const chips = achievementChips(birdieStats, records);
-      return `
-        <div class="card" style="align-items:flex-start;">
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600">${escapeHTML(p.name)}<span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span></div>
-            ${chips ? `<div class="achievement-row">${chips}</div>` : ''}
-          </div>
-          <button class="btn-icon" data-edit="${p.id}" aria-label="Bearbeiten" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>
+    const section = container.querySelector('#friends-section');
+    let html = '';
+    if (pending.length > 0) {
+      html += `<h3 style="font-size:.95rem;margin:20px 0 10px;color:var(--text-muted)">Anfragen</h3>`;
+      html += pending.map(p => `
+        <div class="card" style="align-items:center;">
+          <div style="flex:1;font-weight:500">@${escapeHTML(p.username)}</div>
+          <button class="btn-primary accept-btn" data-id="${p.friendshipId}" style="padding:6px 14px;font-size:.85rem;min-height:auto">Annehmen</button>
         </div>
-      `;
-    }).join('');
-  }
-
-  function showAddStep() {
-    showSheet(`
-      <label style="font-weight:600;display:block;margin-bottom:6px">Spielername</label>
-      <input id="new-player-name" placeholder="Name" style="margin-bottom:16px;">
-      <button class="btn-primary" id="add-player-btn">Hinzufügen</button>
-    `);
-
-    const sheet = document.getElementById('bottom-sheet');
-    sheet.querySelector('#add-player-btn').addEventListener('click', async () => {
-      const name = sheet.querySelector('#new-player-name').value.trim();
-      if (!name) return;
-      await addPlayer(name);
-      closeSheet();
-      await refresh();
+      `).join('');
+    }
+    section.innerHTML = html;
+    section.querySelectorAll('.accept-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await acceptFriendRequest(btn.dataset.id);
+        refresh();
+      });
     });
   }
 
-  function showEditStep(id, currentName) {
+  function showAddFriendSheet() {
     showSheet(`
-      <label style="font-weight:600;display:block;margin-bottom:6px">Name</label>
-      <input id="edit-player-name" value="${escapeHTML(currentName)}" style="margin-bottom:16px;">
-      <button class="btn-primary" id="save-player-btn">Speichern</button>
-      <button class="btn-danger" id="delete-player-btn" style="margin-top:12px;width:100%">Spieler löschen</button>
+      <label style="font-weight:600;display:block;margin-bottom:6px">Benutzername</label>
+      <input id="friend-username" placeholder="z.B. max_mustermann" style="margin-bottom:16px;" autocomplete="off">
+      <p id="friend-msg" style="font-size:.9rem;margin-bottom:12px;display:none"></p>
+      <button class="btn-primary" id="send-request-btn">Anfrage senden</button>
     `);
-
     const sheet = document.getElementById('bottom-sheet');
-    sheet.querySelector('#save-player-btn').addEventListener('click', async () => {
-      const name = sheet.querySelector('#edit-player-name').value.trim();
-      if (!name) return;
-      await updatePlayer(id, name);
-      closeSheet();
-      await refresh();
+    sheet.querySelector('#send-request-btn').addEventListener('click', async () => {
+      const username = sheet.querySelector('#friend-username').value.trim();
+      const msgEl = sheet.querySelector('#friend-msg');
+      if (!username) return;
+      try {
+        const profile = await findProfileByUsername(username);
+        if (!profile) {
+          msgEl.textContent = `Kein Nutzer "${username}" gefunden.`;
+          msgEl.style.color = 'var(--error, #e53e3e)';
+          msgEl.style.display = 'block';
+          return;
+        }
+        await sendFriendRequest(profile.id);
+        msgEl.textContent = `Anfrage an @${username} gesendet!`;
+        msgEl.style.color = 'var(--primary)';
+        msgEl.style.display = 'block';
+      } catch (err) {
+        msgEl.textContent = err.message;
+        msgEl.style.color = 'var(--error, #e53e3e)';
+        msgEl.style.display = 'block';
+      }
     });
-    sheet.querySelector('#delete-player-btn').addEventListener('click', async () => {
-      await deletePlayer(id);
+  }
+
+  function showRemoveFriendSheet(playerId, friendshipId, playerName) {
+    showSheet(`
+      <p style="margin-bottom:20px">Freundschaft mit <strong>${escapeHTML(playerName)}</strong> aufheben?</p>
+      <button class="btn-danger" id="remove-friend-btn" style="width:100%">Freundschaft auflösen</button>
+    `);
+    document.getElementById('bottom-sheet').querySelector('#remove-friend-btn').addEventListener('click', async () => {
+      await removeFriend(friendshipId);
+      await deletePlayer(playerId);
       closeSheet();
       await refresh();
     });
@@ -190,13 +271,16 @@ export async function render(container) {
 
   await refresh();
 
-  container.querySelector('#show-form-btn').addEventListener('click', showAddStep);
+  container.querySelector('#add-friend-btn').addEventListener('click', showAddFriendSheet);
+  container.querySelector('#logout-btn').addEventListener('click', () => signOut());
 
   container.addEventListener('click', async e => {
     const btn = e.target.closest('[data-edit]');
     if (!btn) return;
     const id = btn.dataset.edit;
-    const player = allPlayers.find(p => p.id === id);
-    if (player) showEditStep(id, player.name);
+    const friendshipId = btn.dataset.friendshipId;
+    const allP = await getAllPlayers();
+    const player = allP.find(p => p.id === id);
+    if (player && friendshipId) showRemoveFriendSheet(id, friendshipId, player.name);
   });
 }

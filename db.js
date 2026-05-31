@@ -23,7 +23,9 @@ function openDB() {
 }
 
 function uuid() {
-  return crypto.randomUUID();
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
 }
 
 function tx(db, stores, mode, fn) {
@@ -76,6 +78,12 @@ export async function getAllPlayers() {
 export async function addPlayer(name) {
   const db = await openDB();
   const player = { id: uuid(), name };
+  await tx(db, ['players'], 'readwrite', t => put(t.objectStore('players'), player));
+  return player;
+}
+
+export async function putPlayer(player) {
+  const db = await openDB();
   await tx(db, ['players'], 'readwrite', t => put(t.objectStore('players'), player));
   return player;
 }

@@ -1,6 +1,7 @@
-import { getRound, getCourse, getAllPlayers, saveHoleScore, deleteRound } from '../db.js';
+import { getRound, getAllPlayers, saveHoleScore, deleteRound } from '../db.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
+import { publishRound, getCourse } from '../supabase.js';
 
 export async function render(container, params) {
   const { roundId } = params;
@@ -84,4 +85,33 @@ export async function render(container, params) {
   }
 
   draw();
+
+  // Share button
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'btn-primary';
+  shareBtn.textContent = 'Runde teilen';
+  shareBtn.style.cssText = 'display:block;margin:24px auto;padding:12px 32px;font-size:1rem';
+  container.querySelector('.scorecard-screen').appendChild(shareBtn);
+
+  shareBtn.addEventListener('click', async () => {
+    shareBtn.disabled = true;
+    shareBtn.textContent = 'Wird geteilt...';
+    try {
+      const playerMap = new Map(players.map(p => [p.id, p]));
+      const participantMap = round.playerIds
+        .map(pid => {
+          const player = playerMap.get(pid);
+          if (!player) return null;
+          return { userId: pid, displayName: player.name, scores: round.scores[pid] };
+        })
+        .filter(Boolean);
+
+      await publishRound(course, round.date, participantMap);
+      shareBtn.textContent = '✓ Geteilt!';
+    } catch (err) {
+      console.error(err);
+      shareBtn.textContent = 'Fehler – nochmal versuchen';
+      shareBtn.disabled = false;
+    }
+  });
 }
