@@ -197,11 +197,11 @@ export async function getUserRounds() {
     .from('round_participants')
     .select(`
       scores,
-      cloud_rounds!inner(id, holes, date)
+      cloud_rounds!inner(id, holes, date, status)
     `)
     .eq('user_id', user.id);
   if (error) throw error;
-  return (data || []).map(p => ({
+  return (data || []).filter(p => p.cloud_rounds?.status === 'published').map(p => ({
     courseId: p.cloud_rounds.id,
     playerIds: [user.id],
     scores: { [user.id]: p.scores },
@@ -223,7 +223,7 @@ export async function getCloudRoundsForPlayers(playerIds) {
 
   const { data, error } = await supabase
     .from('round_participants')
-    .select('round_id, user_id, scores, cloud_rounds(id, course_name, holes, date)')
+    .select('round_id, user_id, scores, cloud_rounds(id, course_name, holes, date, status)')
     .in('round_id', roundIds);
   if (error) throw error;
 
@@ -232,6 +232,7 @@ export async function getCloudRoundsForPlayers(playerIds) {
 
   for (const p of (data || [])) {
     const cr = p.cloud_rounds;
+    if (!cr || cr.status !== 'published') continue;
     if (!courseMap.has(cr.id))
       courseMap.set(cr.id, { id: cr.id, name: cr.course_name, holes: cr.holes });
     if (!roundMap.has(p.round_id))
@@ -245,6 +246,10 @@ export async function getCloudRoundsForPlayers(playerIds) {
 }
 
 export async function getFeedRounds() {
+  const user = await getCurrentUser();
+  const friends = await getFriends();
+  const allowedIds = [user.id, ...friends.map(f => f.userId)];
+
   const { data, error } = await supabase
     .from('cloud_rounds')
     .select(`
@@ -252,8 +257,80 @@ export async function getFeedRounds() {
       profiles!cloud_rounds_created_by_fkey(username),
       round_participants(user_id, display_name, scores)
     `)
+    .eq('status', 'published')
+    .in('created_by', allowedIds)
     .order('date', { ascending: false })
     .limit(50);
   if (error) throw error;
   return data || [];
+}
+
+export async function getMyRounds() {
+  const user = await getCurrentUser();
+  const { data, error } = await supabase
+    .from('round_participants')
+    .select(`
+      scores,
+      cloud_rounds!inner(
+        id, course_name, holes, date, status,
+        round_participants(display_name)
+      )
+    `)
+    .eq('user_id', user.id);
+  if (error) throw error;
+  return (data || [])
+    .map(p => ({ ...p.cloud_rounds, myScores: p.scores }))
+    .filter(r => r.status === 'published')
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(r => ({
+      id: r.id,
+      courseName: r.course_name,
+      date: r.date,
+      holes: r.holes,
+      players: (r.round_participants || []).map(rp => rp.display_name),
+      myScores: r.myScores,
+    }));
+}
+
+export async function createActiveRound(courseName, date, playerIds, playerNames, holes) {
+  const user = await getCurrentUser();
+  const { data: round, error } = await supabase
+    .from('cloud_rounds')
+    .insert({ created_by: user.id, course_name: courseName, holes, date, status: 'active' })
+    .select()
+    .single();
+  if (error) throw error;
+
+  const participants = playerIds.map(pid => ({
+    round_id: round.id,
+    user_id: pid,
+    display_name: playerNames[pid] || pid,
+    scores: Array(18).fill(null),
+  }));
+  const { error: partError } = await supabase.from('round_participants').insert(participants);
+  if (partError) throw partError;
+  return round.id;
+}
+
+export async function syncParticipantScores(cloudRoundId, userId, scores) {
+  const { error } = await supabase
+    .from('round_participants')
+    .update({ scores })
+    .eq('round_id', cloudRoundId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+export async function publishActiveRound(cloudRoundId) {
+  const { error } = await supabase
+    .from('cloud_rounds')
+    .update({ status: 'published' })
+    .eq('id', cloudRoundId);
+  if (error) throw error;
+}
+
+export async function deleteActiveRound(roundId) {
+  await supabase.from('round_participants').delete().eq('round_id', roundId);
+  const { error } = await supabase.from('cloud_rounds').delete().eq('id', roundId);
+  if (error) throw error;
 }

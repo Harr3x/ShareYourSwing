@@ -1,27 +1,43 @@
-import { getRound, getAllPlayers, saveHoleScore, deleteRound } from '../db.js';
+import { getDraft, saveDraftScore, deleteDraft, setCloudRoundId, setPendingSync } from '../db.js';
+import { createActiveRound, syncParticipantScores, publishActiveRound, deleteActiveRound } from '../supabase.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
-import { publishRound, getCourse } from '../supabase.js';
 
 export async function render(container, params) {
-  const { roundId } = params;
-  const [round, players] = await Promise.all([getRound(roundId), getAllPlayers()]);
-  const course = await getCourse(round.courseId);
-  const playerMap = new Map(players.map(p => [p.id, p]));
-  const roundPlayers = round.playerIds.map(id => playerMap.get(id)).filter(Boolean);
+  const { draftId } = params;
+  let draft = await getDraft(draftId);
+  if (!draft) {
+    container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
+    return;
+  }
+
+  const course = { name: draft.courseName, holes: draft.holes };
+  const roundPlayers = draft.playerIds.map(id => ({ id, name: draft.playerNames[id] || id }));
 
   function totalFor(playerId) {
-    const scores = round.scores[playerId];
-    return scores.reduce((s, v) => v != null ? s + v : s, 0);
+    return draft.scores[playerId].reduce((s, v) => v != null ? s + v : s, 0);
   }
 
   function vsParFor(playerId) {
-    const scores = round.scores[playerId];
     let diff = 0;
     for (let i = 0; i < 18; i++) {
-      if (scores[i] != null) diff += scores[i] - course.holes[i].par;
+      if (draft.scores[playerId][i] != null)
+        diff += draft.scores[playerId][i] - course.holes[i].par;
     }
     return diff;
+  }
+
+  async function ensureCloudRound() {
+    draft = await getDraft(draftId);
+    if (!draft.cloudRoundId) {
+      const cloudId = await createActiveRound(
+        draft.courseName, draft.date,
+        draft.playerIds, draft.playerNames, draft.holes
+      );
+      await setCloudRoundId(draftId, cloudId);
+      draft = await getDraft(draftId);
+    }
+    return draft.cloudRoundId;
   }
 
   function draw() {
@@ -32,13 +48,13 @@ export async function render(container, params) {
       `<td>${course.holes[i].par}</td>`).join('')}<th>Total</th><th>+/−</th></tr>`;
     const playerRows = roundPlayers.map(p => {
       const cells = holes.map(i => {
-        const strokes = round.scores[p.id][i];
+        const strokes = draft.scores[p.id][i];
         const par = course.holes[i].par;
-        return `<td data-round="${roundId}" data-pid="${p.id}" data-hole="${i}" style="cursor:pointer">${scoreCellHTML(strokes, par)}</td>`;
+        return `<td data-pid="${p.id}" data-hole="${i}" style="cursor:pointer">${scoreCellHTML(strokes, par)}</td>`;
       }).join('');
       const vsPar = vsParFor(p.id);
       const vsParStr = vsPar > 0 ? `+${vsPar}` : `${vsPar}`;
-      return `<tr><th style="text-align:left;padding-left:8px">${p.name}</th>${cells}<td class="row-total">${totalFor(p.id) || '—'}</td><td class="row-total">${round.scores[p.id].every(v => v == null) ? '—' : vsParStr}</td></tr>`;
+      return `<tr><th style="text-align:left;padding-left:8px">${p.name}</th>${cells}<td class="row-total">${totalFor(p.id) || '—'}</td><td class="row-total">${draft.scores[p.id].every(v => v == null) ? '—' : vsParStr}</td></tr>`;
     }).join('');
 
     container.innerHTML = `
@@ -55,16 +71,20 @@ export async function render(container, params) {
           </table>
         </div>
         <div style="margin-top:16px;">
-          <a href="#play?roundId=${roundId}&hole=0" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
+          <a href="#play?draftId=${draftId}&hole=0" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
             Weiter spielen ${icons.chevronRight}
           </a>
         </div>
       </div>
     `;
 
-    container.querySelector('#btn-delete-round')?.addEventListener('click', async () => {
+    container.querySelector('#btn-delete-round').addEventListener('click', async () => {
       if (!confirm('Runde wirklich löschen?')) return;
-      await deleteRound(roundId);
+      draft = await getDraft(draftId);
+      if (draft?.cloudRoundId) {
+        try { await deleteActiveRound(draft.cloudRoundId); } catch (e) { console.warn(e); }
+      }
+      await deleteDraft(draftId);
       location.hash = '#home';
     });
 
@@ -73,12 +93,21 @@ export async function render(container, params) {
         const holeIndex = parseInt(cell.dataset.hole, 10);
         const playerId = cell.dataset.pid;
         const par = course.holes[holeIndex].par;
-        const current = round.scores[playerId][holeIndex] ?? par;
+        const current = draft.scores[playerId][holeIndex] ?? par;
         const val = prompt(`Schläge für Bahn ${holeIndex + 1} (Par ${par}):`, current);
         const parsed = parseInt(val, 10);
         if (!val || isNaN(parsed) || parsed < 1) return;
-        round.scores[playerId][holeIndex] = parsed;
-        await saveHoleScore(roundId, playerId, holeIndex, parsed);
+        draft.scores[playerId][holeIndex] = parsed;
+        await saveDraftScore(draftId, playerId, holeIndex, parsed);
+        if (navigator.onLine) {
+          draft = await getDraft(draftId);
+          if (draft.cloudRoundId) {
+            syncParticipantScores(draft.cloudRoundId, playerId, draft.scores[playerId])
+              .catch(e => console.warn('sync failed:', e));
+          }
+        } else {
+          await setPendingSync(draftId, true);
+        }
         draw();
       });
     });
@@ -86,7 +115,6 @@ export async function render(container, params) {
 
   draw();
 
-  // Share button
   const shareBtn = document.createElement('button');
   shareBtn.className = 'btn-primary';
   shareBtn.textContent = 'Runde teilen';
@@ -97,17 +125,20 @@ export async function render(container, params) {
     shareBtn.disabled = true;
     shareBtn.textContent = 'Wird geteilt...';
     try {
-      const playerMap = new Map(players.map(p => [p.id, p]));
-      const participantMap = round.playerIds
-        .map(pid => {
-          const player = playerMap.get(pid);
-          if (!player) return null;
-          return { userId: pid, displayName: player.name, scores: round.scores[pid] };
-        })
-        .filter(Boolean);
+      draft = await getDraft(draftId);
+      const cloudRoundId = await ensureCloudRound();
 
-      await publishRound(course, round.date, participantMap);
+      // Final sync of all scores
+      await Promise.all(
+        draft.playerIds.map(pid =>
+          syncParticipantScores(cloudRoundId, pid, draft.scores[pid])
+        )
+      );
+
+      await publishActiveRound(cloudRoundId);
+      await deleteDraft(draftId);
       shareBtn.textContent = '✓ Geteilt!';
+      setTimeout(() => { location.hash = '#home'; }, 1200);
     } catch (err) {
       console.error(err);
       shareBtn.textContent = 'Fehler – nochmal versuchen';

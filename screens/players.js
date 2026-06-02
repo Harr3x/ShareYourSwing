@@ -1,7 +1,6 @@
-import { getAllPlayers, addPlayer, deletePlayer, updatePlayer, putPlayer } from '../db.js';
 import { computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
-import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getMyProfile, getCloudRoundsForPlayers } from '../supabase.js';
+import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers } from '../supabase.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -79,15 +78,7 @@ function achievementChips(birdieStats, records) {
 }
 
 export async function render(container) {
-  const [allPlayers, currentUser, friends] = await Promise.all([
-    getAllPlayers(), getCurrentUser(), getFriends()
-  ]);
-
-  // Auto-add logged-in user as local player if not already present
-  if (currentUser && !allPlayers.find(p => p.id === currentUser.id)) {
-    const profile = await getMyProfile();
-    await putPlayer({ id: currentUser.id, name: profile?.username || currentUser.email });
-  }
+  const [currentUser, friends] = await Promise.all([getCurrentUser(), getFriends()]);
 
   const friendIds = friends.map(f => f.userId);
   const { rounds, courseMap } = await getCloudRoundsForPlayers(
@@ -145,27 +136,12 @@ export async function render(container) {
   }
 
   async function refresh() {
-    const [players, friends, pending] = await Promise.all([
-      getAllPlayers(), getFriends(), getPendingRequests()
-    ]);
+    const [friends, pending] = await Promise.all([getFriends(), getPendingRequests()]);
 
-    // Valid IDs = current user + accepted friends (all Supabase UUIDs)
-    const validIds = new Set([
-      ...(currentUser ? [currentUser.id] : []),
-      ...friends.map(f => f.userId),
-    ]);
-
-    // Remove stale local players (old random UUIDs from pre-cloud state)
-    const stale = players.filter(p => !validIds.has(p.id));
-    if (stale.length > 0) await Promise.all(stale.map(p => deletePlayer(p.id)));
-
-    // Auto-add accepted friends not yet in local DB
-    const localPlayerIds = new Set(players.map(p => p.id));
-    const newFriends = friends.filter(f => !localPlayerIds.has(f.userId));
-    if (newFriends.length > 0) {
-      await Promise.all(newFriends.map(f => putPlayer({ id: f.userId, name: f.username })));
-    }
-    const allP = (stale.length > 0 || newFriends.length > 0) ? await getAllPlayers() : players;
+    const allP = [
+      { id: currentUser.id, name: currentUser.user_metadata?.username || currentUser.email },
+      ...friends.map(f => ({ id: f.userId, name: f.username })),
+    ];
     const friendMap = new Map(friends.map(f => [f.userId, f.friendshipId]));
 
     const list = container.querySelector('#player-list');
@@ -198,7 +174,7 @@ export async function render(container) {
               </div>
               ${chips ? `<div class="achievement-row">${chips}</div>` : ''}
             </div>
-            ${!isMe ? `<button class="btn-icon" data-edit="${p.id}" data-friendship-id="${friendshipId}" aria-label="Optionen" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>` : ''}
+            ${!isMe ? `<button class="btn-icon" data-edit="${p.id}" data-friendship-id="${friendshipId}" data-player-name="${escapeHTML(p.name)}" aria-label="Optionen" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>` : ''}
           </div>
         `;
       }).join('');
@@ -263,7 +239,6 @@ export async function render(container) {
     `);
     document.getElementById('bottom-sheet').querySelector('#remove-friend-btn').addEventListener('click', async () => {
       await removeFriend(friendshipId);
-      await deletePlayer(playerId);
       closeSheet();
       await refresh();
     });
@@ -274,13 +249,12 @@ export async function render(container) {
   container.querySelector('#add-friend-btn').addEventListener('click', showAddFriendSheet);
   container.querySelector('#logout-btn').addEventListener('click', () => signOut());
 
-  container.addEventListener('click', async e => {
+  container.addEventListener('click', e => {
     const btn = e.target.closest('[data-edit]');
     if (!btn) return;
     const id = btn.dataset.edit;
     const friendshipId = btn.dataset.friendshipId;
-    const allP = await getAllPlayers();
-    const player = allP.find(p => p.id === id);
-    if (player && friendshipId) showRemoveFriendSheet(id, friendshipId, player.name);
+    const playerName = btn.dataset.playerName || id;
+    if (friendshipId) showRemoveFriendSheet(id, friendshipId, playerName);
   });
 }

@@ -1,8 +1,9 @@
-const CACHE = 'sys-v19';
+const CACHE = 'sys-v20';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './migration.js',
   './styles.css',
   './db.js',
   './config.js',
