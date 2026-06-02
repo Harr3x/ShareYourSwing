@@ -99,8 +99,8 @@ export async function render(container, params) {
         const current = draft.scores[playerId][holeIndex] ?? par;
         const val = prompt(`Schläge für Bahn ${holeIndex + 1} (Par ${par}):`, current);
         const parsed = parseInt(val, 10);
-        if (!val || isNaN(parsed) || parsed < 1) return;
-        draft.scores[playerId][holeIndex] = parsed;
+        if (!val || isNaN(parsed) || parsed < 0) return;
+        draft.scores[playerId][holeIndex] = parsed === 0 ? null : parsed;
         await saveDraftScore(draftId, playerId, holeIndex, parsed);
         if (navigator.onLine) {
           draft = await getDraft(draftId);

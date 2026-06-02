@@ -53,18 +53,22 @@ export async function render(container, params) {
     }).join('');
   }
 
+  function scoreBadgeContent(score, par) {
+    if (score === 0) return { cls: 'golf-par', display: '—', label: 'Nicht gespielt' };
+    return { cls: getScoreClass(score, par), display: score, label: getScoreLabel(score, par) };
+  }
+
   function playerCardHTML(p) {
     const par = currentPar();
     const score = currentScores[p.id];
-    const cls = getScoreClass(score, par);
-    const label = getScoreLabel(score, par);
+    const { cls, display, label } = scoreBadgeContent(score, par);
     return `
       <div class="card" data-card="${p.id}" style="flex-direction:column;align-items:stretch;gap:12px;">
         <div style="font-size:17px;font-weight:600;letter-spacing:-0.2px;">${escapeHTML(p.name)}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <button data-minus="${p.id}" style="width:52px;height:52px;min-height:unset;border-radius:50%;font-size:26px;font-weight:300;background:var(--surface-2);border:1.5px solid var(--border);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;justify-content:center;">−</button>
           <div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
-            <span class="${cls}" data-badge="${p.id}" style="width:52px;height:52px;font-size:24px;">${score}</span>
+            <span class="${cls}" data-badge="${p.id}" style="width:52px;height:52px;font-size:24px;">${display}</span>
             <div data-label="${p.id}" style="font-size:12px;color:var(--text-muted);font-weight:500;min-height:16px;text-align:center;">${label}</div>
           </div>
           <button data-plus="${p.id}" style="width:52px;height:52px;min-height:unset;border-radius:50%;font-size:26px;font-weight:300;background:var(--surface-2);border:1.5px solid var(--border);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;justify-content:center;">+</button>
@@ -103,9 +107,8 @@ export async function render(container, params) {
   function updateScoreDisplay(pid) {
     const par = currentPar();
     const score = currentScores[pid];
-    const cls = getScoreClass(score, par);
-    const label = getScoreLabel(score, par);
 
+    const { cls, display, label } = scoreBadgeContent(score, par);
     const badge = container.querySelector(`[data-badge="${pid}"]`);
     const labelEl = container.querySelector(`[data-label="${pid}"]`);
     if (!badge) return;
@@ -113,7 +116,7 @@ export async function render(container, params) {
     badge.className = `${cls}`;
     badge.setAttribute('data-badge', pid);
     badge.style.cssText = 'width:52px;height:52px;font-size:24px;';
-    badge.textContent = score;
+    badge.textContent = display;
     if (labelEl) labelEl.textContent = label;
 
     void badge.offsetWidth;
@@ -217,8 +220,9 @@ export async function render(container, params) {
 
     await Promise.all(
       roundPlayers.map(async p => {
-        draft.scores[p.id][holeIndex] = currentScores[p.id];
-        await saveDraftScore(draftId, p.id, holeIndex, currentScores[p.id]);
+        const val = currentScores[p.id] === 0 ? null : currentScores[p.id];
+        draft.scores[p.id][holeIndex] = val;
+        await saveDraftScore(draftId, p.id, holeIndex, val);
       })
     );
 
@@ -282,7 +286,7 @@ export async function render(container, params) {
     const minus = e.target.closest('[data-minus]');
     if (minus) {
       const pid = minus.dataset.minus;
-      if (currentScores[pid] > 1) { currentScores[pid]--; updateScoreDisplay(pid); }
+      if (currentScores[pid] > 0) { currentScores[pid]--; updateScoreDisplay(pid); }
       return;
     }
     const plus = e.target.closest('[data-plus]');
