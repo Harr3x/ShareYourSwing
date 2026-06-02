@@ -57,7 +57,7 @@ export async function render(container, params) {
       const removeBtn = roundPlayers.length > 1
         ? `<button data-remove-player="${p.id}" style="margin-left:6px;padding:1px 6px;min-height:unset;font-size:12px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;">×</button>`
         : '';
-      return `<tr><th style="text-align:left;padding-left:8px"><span style="display:inline-flex;align-items:center;">${p.name}${removeBtn}</span></th>${cells}<td class="row-total">${totalFor(p.id) || '—'}</td><td class="row-total">${draft.scores[p.id].every(v => v == null) ? '—' : vsParStr}</td></tr>`;
+      return `<tr><th style="text-align:left;padding-left:8px"><span style="display:inline-flex;align-items:center;">${p.name}${removeBtn}</span></th>${cells}<td class="row-total">${draft.scores[p.id].some(v => v != null) ? totalFor(p.id) : '—'}</td><td class="row-total">${draft.scores[p.id].every(v => v == null) ? '—' : vsParStr}</td></tr>`;
     }).join('');
 
     container.innerHTML = `
@@ -97,11 +97,12 @@ export async function render(container, params) {
         const playerId = cell.dataset.pid;
         const par = course.holes[holeIndex].par;
         const current = draft.scores[playerId][holeIndex] ?? par;
-        const val = prompt(`Schläge für Bahn ${holeIndex + 1} (Par ${par}):`, current);
+        const val = prompt(`Schläge für Bahn ${holeIndex + 1} (Par ${par}, 0 = nicht gespielt):`, current);
         const parsed = parseInt(val, 10);
         if (!val || isNaN(parsed) || parsed < 0) return;
-        draft.scores[playerId][holeIndex] = parsed === 0 ? null : parsed;
-        await saveDraftScore(draftId, playerId, holeIndex, parsed);
+        const stored = parsed === 0 ? null : parsed;
+        draft.scores[playerId][holeIndex] = stored;
+        await saveDraftScore(draftId, playerId, holeIndex, stored);
         if (navigator.onLine) {
           draft = await getDraft(draftId);
           if (draft.cloudRoundId) {
@@ -120,7 +121,12 @@ export async function render(container, params) {
         const playerId = btn.dataset.removePlayer;
         const name = roundPlayers.find(p => p.id === playerId)?.name || playerId;
         if (!confirm(`${name} aus der Runde entfernen?`)) return;
-        await removePlayerFromDraft(draftId, playerId);
+        try {
+          await removePlayerFromDraft(draftId, playerId);
+        } catch (e) {
+          alert('Fehler beim Entfernen des Spielers. Bitte erneut versuchen.');
+          return;
+        }
         if (draft.cloudRoundId) {
           await removeParticipant(draft.cloudRoundId, playerId).catch(e => console.warn(e));
         }

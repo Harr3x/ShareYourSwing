@@ -64,6 +64,7 @@ export async function removePlayerFromDraft(id, playerId) {
     const req = store.get(id);
     req.onsuccess = e => {
       const draft = e.target.result;
+      if (!draft) { resolve(); return; }
       draft.playerIds = draft.playerIds.filter(pid => pid !== playerId);
       delete draft.playerNames[playerId];
       delete draft.scores[playerId];
