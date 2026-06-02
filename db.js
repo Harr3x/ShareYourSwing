@@ -55,6 +55,26 @@ export async function getDraft(id) {
   });
 }
 
+export async function removePlayerFromDraft(id, playerId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(['drafts'], 'readwrite');
+    t.onerror = e => reject(e.target.error);
+    const store = t.objectStore('drafts');
+    const req = store.get(id);
+    req.onsuccess = e => {
+      const draft = e.target.result;
+      draft.playerIds = draft.playerIds.filter(pid => pid !== playerId);
+      delete draft.playerNames[playerId];
+      delete draft.scores[playerId];
+      const put = store.put(draft);
+      put.onsuccess = () => resolve();
+      put.onerror = ev => reject(ev.target.error);
+    };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
 export async function getActiveDraft() {
   const db = await openDB();
   return new Promise((resolve, reject) => {

@@ -329,6 +329,15 @@ export async function publishActiveRound(cloudRoundId) {
   if (error) throw error;
 }
 
+export async function removeParticipant(cloudRoundId, userId) {
+  const { error } = await supabase
+    .from('round_participants')
+    .delete()
+    .eq('round_id', cloudRoundId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
 export async function deleteActiveRound(roundId) {
   await supabase.from('round_participants').delete().eq('round_id', roundId);
   const { error } = await supabase.from('cloud_rounds').delete().eq('id', roundId);
