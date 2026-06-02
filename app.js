@@ -1,5 +1,6 @@
 import { renderNavBar } from './components/nav-bar.js';
 import { getSession } from './supabase.js';
+import { runMigrationIfNeeded } from './migration.js';
 
 const PUBLIC_ROUTES = new Set(['#login']);
 
@@ -65,4 +66,5 @@ async function navigate() {
 }
 
 window.addEventListener('hashchange', navigate);
+runMigrationIfNeeded().catch(e => console.warn('migration failed:', e));
 navigate();

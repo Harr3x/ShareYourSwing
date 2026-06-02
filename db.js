@@ -1,21 +1,22 @@
 const DB_NAME = 'shareyourswing';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = e => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains('players')) {
+      // Preserve old stores (players, courses, rounds) for migration — not actively used
+      if (!db.objectStoreNames.contains('players'))
         db.createObjectStore('players', { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains('courses')) {
+      if (!db.objectStoreNames.contains('courses'))
         db.createObjectStore('courses', { keyPath: 'id' });
-      }
       if (!db.objectStoreNames.contains('rounds')) {
         const rs = db.createObjectStore('rounds', { keyPath: 'id' });
         rs.createIndex('date', 'date');
       }
+      if (!db.objectStoreNames.contains('drafts'))
+        db.createObjectStore('drafts', { keyPath: 'id' });
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror = e => reject(e.target.error);
@@ -28,156 +29,121 @@ function uuid() {
     (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
 }
 
-function tx(db, stores, mode, fn) {
+// ─── Drafts ─────────────────────────────────────────────────────────────────
+// Draft schema: { id, cloudRoundId, courseId, courseName, holes, playerIds,
+//                 playerNames, date, scores, pendingSync, createdAt }
+
+export async function addDraft(data) {
+  const db = await openDB();
+  const draft = { ...data, id: uuid(), cloudRoundId: null, pendingSync: false, createdAt: Date.now() };
   return new Promise((resolve, reject) => {
-    const t = db.transaction(stores, mode);
+    const t = db.transaction(['drafts'], 'readwrite');
     t.onerror = e => reject(e.target.error);
-    resolve(fn(t));
-  });
-}
-
-function getAll(store) {
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = e => resolve(e.target.result);
+    const req = t.objectStore('drafts').put(draft);
+    req.onsuccess = () => resolve(draft);
     req.onerror = e => reject(e.target.error);
   });
 }
 
-function getOne(store, id) {
+export async function getDraft(id) {
+  const db = await openDB();
   return new Promise((resolve, reject) => {
+    const t = db.transaction(['drafts'], 'readonly');
+    const req = t.objectStore('drafts').get(id);
+    req.onsuccess = e => resolve(e.target.result ?? null);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+export async function getActiveDraft() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(['drafts'], 'readonly');
+    const req = t.objectStore('drafts').getAll();
+    req.onsuccess = e => resolve((e.target.result ?? [])[0] ?? null);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+export async function saveDraftScore(id, playerId, holeIndex, strokes) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(['drafts'], 'readwrite');
+    t.onerror = e => reject(e.target.error);
+    const store = t.objectStore('drafts');
     const req = store.get(id);
-    req.onsuccess = e => resolve(e.target.result);
+    req.onsuccess = e => {
+      const draft = e.target.result;
+      draft.scores[playerId][holeIndex] = strokes;
+      store.put(draft).onsuccess = () => resolve();
+    };
     req.onerror = e => reject(e.target.error);
   });
 }
 
-function put(store, value) {
+export async function setCloudRoundId(id, cloudRoundId) {
+  const db = await openDB();
   return new Promise((resolve, reject) => {
-    const req = store.put(value);
-    req.onsuccess = e => resolve(e.target.result);
+    const t = db.transaction(['drafts'], 'readwrite');
+    t.onerror = e => reject(e.target.error);
+    const store = t.objectStore('drafts');
+    const req = store.get(id);
+    req.onsuccess = e => {
+      const draft = e.target.result;
+      draft.cloudRoundId = cloudRoundId;
+      store.put(draft).onsuccess = () => resolve();
+    };
     req.onerror = e => reject(e.target.error);
   });
 }
 
-function del(store, id) {
+export async function setPendingSync(id, pending) {
+  const db = await openDB();
   return new Promise((resolve, reject) => {
-    const req = store.delete(id);
+    const t = db.transaction(['drafts'], 'readwrite');
+    t.onerror = e => reject(e.target.error);
+    const store = t.objectStore('drafts');
+    const req = store.get(id);
+    req.onsuccess = e => {
+      const draft = e.target.result;
+      draft.pendingSync = pending;
+      store.put(draft).onsuccess = () => resolve();
+    };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+export async function deleteDraft(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(['drafts'], 'readwrite');
+    t.onerror = e => reject(e.target.error);
+    const req = t.objectStore('drafts').delete(id);
     req.onsuccess = () => resolve();
     req.onerror = e => reject(e.target.error);
   });
 }
 
-// ─── Players ────────────────────────────────────────────────────────────────
+// ─── Legacy (migration only) ─────────────────────────────────────────────────
 
-export async function getAllPlayers() {
+export async function getLegacyRounds() {
   const db = await openDB();
-  return tx(db, ['players'], 'readonly', t => getAll(t.objectStore('players')));
-}
-
-export async function addPlayer(name) {
-  const db = await openDB();
-  const player = { id: uuid(), name };
-  await tx(db, ['players'], 'readwrite', t => put(t.objectStore('players'), player));
-  return player;
-}
-
-export async function putPlayer(player) {
-  const db = await openDB();
-  await tx(db, ['players'], 'readwrite', t => put(t.objectStore('players'), player));
-  return player;
-}
-
-export async function deletePlayer(id) {
-  const db = await openDB();
-  return tx(db, ['players'], 'readwrite', t => del(t.objectStore('players'), id));
-}
-
-export async function updatePlayer(id, name) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(['players'], 'readwrite');
-    const store = t.objectStore('players');
-    const req = store.get(id);
-    req.onsuccess = e => {
-      const player = e.target.result;
-      player.name = name;
-      store.put(player).onsuccess = () => resolve();
-    };
-    req.onerror = e => reject(e.target.error);
-    t.onerror = e => reject(e.target.error);
+  return new Promise((resolve) => {
+    if (!db.objectStoreNames.contains('rounds')) { resolve([]); return; }
+    const t = db.transaction(['rounds'], 'readonly');
+    const req = t.objectStore('rounds').getAll();
+    req.onsuccess = e => resolve(e.target.result ?? []);
+    req.onerror = () => resolve([]);
   });
 }
 
-// ─── Courses ────────────────────────────────────────────────────────────────
-
-export async function getAllCourses() {
+export async function getLegacyPlayers() {
   const db = await openDB();
-  return tx(db, ['courses'], 'readonly', t => getAll(t.objectStore('courses')));
-}
-
-export async function getCourse(id) {
-  const db = await openDB();
-  return tx(db, ['courses'], 'readonly', t => getOne(t.objectStore('courses'), id));
-}
-
-export async function addCourse(name, holes) {
-  // holes: [{par}] x 18
-  const db = await openDB();
-  const course = { id: uuid(), name, holes: holes.map((h, i) => ({ number: i + 1, par: h.par })) };
-  await tx(db, ['courses'], 'readwrite', t => put(t.objectStore('courses'), course));
-  return course;
-}
-
-export async function updateCourse(course) {
-  const db = await openDB();
-  return tx(db, ['courses'], 'readwrite', t => put(t.objectStore('courses'), course));
-}
-
-export async function deleteCourse(id) {
-  const db = await openDB();
-  return tx(db, ['courses'], 'readwrite', t => del(t.objectStore('courses'), id));
-}
-
-// ─── Rounds ─────────────────────────────────────────────────────────────────
-
-export async function addRound(courseId, playerIds) {
-  const db = await openDB();
-  // scores initialized as null arrays — filled in during play
-  const scores = {};
-  for (const pid of playerIds) scores[pid] = Array(18).fill(null);
-  const round = { id: uuid(), courseId, playerIds, date: new Date().toISOString(), scores };
-  await tx(db, ['rounds'], 'readwrite', t => put(t.objectStore('rounds'), round));
-  return round;
-}
-
-export async function getRound(id) {
-  const db = await openDB();
-  return tx(db, ['rounds'], 'readonly', t => getOne(t.objectStore('rounds'), id));
-}
-
-export async function getAllRounds() {
-  const db = await openDB();
-  return tx(db, ['rounds'], 'readonly', t => getAll(t.objectStore('rounds')));
-}
-
-export async function deleteRound(id) {
-  const db = await openDB();
-  return tx(db, ['rounds'], 'readwrite', t => del(t.objectStore('rounds'), id));
-}
-
-export async function saveHoleScore(roundId, playerId, holeIndex, strokes) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(['rounds'], 'readwrite');
-    const store = t.objectStore('rounds');
-    const req = store.get(roundId);
-    req.onsuccess = e => {
-      const round = e.target.result;
-      round.scores[playerId][holeIndex] = strokes;
-      store.put(round).onsuccess = () => resolve();
-    };
-    req.onerror = e => reject(e.target.error);
-    t.onerror = e => reject(e.target.error);
+  return new Promise((resolve) => {
+    if (!db.objectStoreNames.contains('players')) { resolve([]); return; }
+    const t = db.transaction(['players'], 'readonly');
+    const req = t.objectStore('players').getAll();
+    req.onsuccess = e => resolve(e.target.result ?? []);
+    req.onerror = () => resolve([]);
   });
 }

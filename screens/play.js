@@ -1,5 +1,5 @@
-import { getRound, getAllPlayers, saveHoleScore } from '../db.js';
-import { getCourse } from '../supabase.js';
+import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync } from '../db.js';
+import { createActiveRound, syncParticipantScores } from '../supabase.js';
 import { getScoreClass, getScoreLabel } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 
@@ -12,34 +12,33 @@ function escapeHTML(str) {
 }
 
 export async function render(container, params) {
-  const { roundId } = params;
+  const { draftId } = params;
   let holeIndex = parseInt(params.hole ?? '0', 10);
 
-  const [round, players] = await Promise.all([
-    getRound(roundId),
-    getAllPlayers(),
-  ]);
-  const course = await getCourse(round.courseId);
+  let draft = await getDraft(draftId);
+  if (!draft) {
+    container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
+    return;
+  }
 
-  const playerMap = new Map(players.map(p => [p.id, p]));
-  const roundPlayers = round.playerIds.map(id => playerMap.get(id)).filter(Boolean);
+  const roundPlayers = draft.playerIds.map(id => ({ id, name: draft.playerNames[id] || id }));
 
-  function currentPar() { return course.holes[holeIndex].par; }
+  function currentPar() { return draft.holes[holeIndex].par; }
 
   let currentScores = {};
 
   function initScores() {
     roundPlayers.forEach(p => {
-      currentScores[p.id] = round.scores[p.id][holeIndex] ?? currentPar();
+      currentScores[p.id] = draft.scores[p.id][holeIndex] ?? currentPar();
     });
   }
 
   function updateHash() {
-    history.replaceState(null, '', `#play?roundId=${roundId}&hole=${holeIndex}`);
+    history.replaceState(null, '', `#play?draftId=${draftId}&hole=${holeIndex}`);
   }
 
   function holeStatus(i) {
-    const scored = roundPlayers.filter(p => round.scores[p.id][i] != null).length;
+    const scored = roundPlayers.filter(p => draft.scores[p.id][i] != null).length;
     if (scored === 0) return 'empty';
     if (scored === roundPlayers.length) return 'complete';
     return 'partial';
@@ -82,7 +81,7 @@ export async function render(container, params) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px;">
         <button id="btn-back" class="btn-ghost" style="padding:0 12px;font-size:14px;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">${icons.chevronLeft} Zurück</button>
         <div class="hole-progress">${progressDots()}</div>
-        <a href="#scorecard?roundId=${roundId}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>
+        <a href="#scorecard?draftId=${draftId}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>
       </div>
 
       <button id="btn-hole-overview" style="width:100%;background:none;border:none;border-radius:var(--radius);padding:8px 16px 16px;min-height:unset;text-align:center;cursor:pointer;transition:background 0.15s ease;" title="Bahn wählen">
@@ -130,7 +129,7 @@ export async function render(container, params) {
 
     const tiles = Array.from({ length: 18 }, (_, i) => {
       const status = holeStatus(i);
-      const par = course.holes[i].par;
+      const par = draft.holes[i].par;
       const isCurrent = i === holeIndex;
 
       let bg, color, border;
@@ -177,6 +176,39 @@ export async function render(container, params) {
     document.getElementById('hole-overview-wrap')?.remove();
   }
 
+  // ── Cloud sync ───────────────────────────────────────────────
+
+  async function syncToCloud() {
+    draft = await getDraft(draftId);
+    if (!draft) return;
+
+    if (!draft.cloudRoundId) {
+      try {
+        const cloudId = await createActiveRound(
+          draft.courseName, draft.date,
+          draft.playerIds, draft.playerNames, draft.holes
+        );
+        await setCloudRoundId(draftId, cloudId);
+        draft = await getDraft(draftId);
+      } catch (e) {
+        console.warn('createActiveRound failed:', e);
+        return;
+      }
+    }
+
+    try {
+      await Promise.all(
+        draft.playerIds.map(pid =>
+          syncParticipantScores(draft.cloudRoundId, pid, draft.scores[pid])
+        )
+      );
+      await setPendingSync(draftId, false);
+      draft = await getDraft(draftId);
+    } catch (e) {
+      console.warn('syncParticipantScores failed:', e);
+    }
+  }
+
   // ── Advance / back ───────────────────────────────────────────
 
   async function advance() {
@@ -184,11 +216,17 @@ export async function render(container, params) {
     if (btn) btn.disabled = true;
 
     await Promise.all(
-      roundPlayers.map(p => {
-        round.scores[p.id][holeIndex] = currentScores[p.id];
-        return saveHoleScore(roundId, p.id, holeIndex, currentScores[p.id]);
+      roundPlayers.map(async p => {
+        draft.scores[p.id][holeIndex] = currentScores[p.id];
+        await saveDraftScore(draftId, p.id, holeIndex, currentScores[p.id]);
       })
     );
+
+    if (navigator.onLine) {
+      await syncToCloud();
+    } else {
+      await setPendingSync(draftId, true);
+    }
 
     if (holeIndex < 17) {
       holeIndex++;
@@ -196,7 +234,7 @@ export async function render(container, params) {
       updateHash();
       draw();
     } else {
-      location.hash = `#scorecard?roundId=${roundId}`;
+      location.hash = `#scorecard?draftId=${draftId}`;
     }
   }
 
@@ -221,14 +259,22 @@ export async function render(container, params) {
 
   // ── Init ─────────────────────────────────────────────────────
 
-  // Tag this session so stale listeners from previous rounds self-disable
-  container.dataset.playSession = roundId;
+  container.dataset.playSession = draftId;
 
   initScores();
   draw();
 
+  // Reconnect: sync pending scores when internet returns
+  window.addEventListener('online', function onReconnect() {
+    if (!document.body.contains(container)) {
+      window.removeEventListener('online', onReconnect);
+      return;
+    }
+    syncToCloud().catch(e => console.warn('reconnect sync failed:', e));
+  });
+
   container.addEventListener('click', e => {
-    if (container.dataset.playSession !== roundId) return;
+    if (container.dataset.playSession !== draftId) return;
     if (e.target.closest('#btn-back')) { goBack(); return; }
     if (e.target.closest('#btn-confirm')) { advance(); return; }
     if (e.target.closest('#btn-hole-overview')) { showHoleOverview(); return; }
@@ -247,9 +293,8 @@ export async function render(container, params) {
     }
   });
 
-  // Delegated from body for the sheet (outside container); self-removes when session changes
   document.addEventListener('click', function onJump(e) {
-    if (container.dataset.playSession !== roundId) {
+    if (container.dataset.playSession !== draftId) {
       document.removeEventListener('click', onJump);
       return;
     }
