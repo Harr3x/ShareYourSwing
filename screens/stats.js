@@ -46,14 +46,20 @@ export async function render(container) {
 function hcpTrendSVG(history) {
   if (history.length < 2) return '<p class="text-muted">Mindestens 2 vollständige 18-Loch-Runden für Trend benötigt.</p>';
 
-  const W = 320, H = 160, pad = 30;
+  const W = 320, H = 160, padLeft = 38, padRight = 16, padTop = 16, padBottom = 22;
   const values = history.map(r => r.hcp);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  function x(i) { return pad + (i / (history.length - 1)) * (W - 2 * pad); }
-  function y(v) { return pad + ((max - v) / range) * (H - 2 * pad); }
+  function x(i) { return padLeft + (i / (history.length - 1)) * (W - padLeft - padRight); }
+  function y(v) { return padTop + ((max - v) / range) * (H - padTop - padBottom); }
+
+  const ticks = [max, (max + min) / 2, min];
+  const gridLines = ticks.map(v => `
+    <line x1="${padLeft}" y1="${y(v)}" x2="${W - padRight}" y2="${y(v)}" stroke="var(--border-light)" stroke-width="1"/>
+    <text x="${padLeft - 4}" y="${y(v) + 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">${v.toFixed(1)}</text>
+  `).join('');
 
   const points = history.map((r, i) => `${x(i)},${y(r.hcp)}`).join(' ');
   const dots = history.map((r, i) => `
@@ -64,10 +70,11 @@ function hcpTrendSVG(history) {
 
   return `
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;border:1px solid var(--border-light);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-sm);">
+      ${gridLines}
       <polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="2"/>
       ${dots}
-      <text x="${pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)">${new Date(history[0].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
-      <text x="${W - pad}" y="${H - 6}" font-size="10" fill="var(--text-muted)" text-anchor="end">${new Date(history[history.length-1].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
+      <text x="${padLeft}" y="${H - 4}" font-size="10" fill="var(--text-muted)">${new Date(history[0].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
+      <text x="${W - padRight}" y="${H - 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">${new Date(history[history.length-1].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
     </svg>
   `;
 }
