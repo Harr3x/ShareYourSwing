@@ -38,8 +38,12 @@ export async function render(container) {
     <h2 class="mt-16">Ergebnis-Breakdown</h2>
     ${breakdownHTML(stats.breakdown)}
 
-    <h2 class="mt-16">Breakdown nach Par</h2>
-    ${breakdownByParHTML(byPar)}
+    <h2 class="mt-16" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden;this.querySelector('.chev').textContent=this.nextElementSibling.hidden?'▶':'▼'">
+      Breakdown nach Par <span class="chev" style="font-size:12px;color:var(--text-muted)">▶</span>
+    </h2>
+    <div hidden>
+      ${breakdownByParHTML(byPar)}
+    </div>
   `;
 }
 
