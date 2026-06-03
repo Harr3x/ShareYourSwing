@@ -46,43 +46,47 @@ export async function render(container) {
       ${breakdownByParHTML(byPar)}
     </div>
 
-    <h2 class="mt-16">Bahnen-Statistik</h2>
-    ${courseHoleStatsHTML(courseStats)}
+    <h2 class="mt-16" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden;this.querySelector('.chev').textContent=this.nextElementSibling.hidden?'▶':'▼'">
+      Bahnen-Statistik <span class="chev" style="font-size:12px;color:var(--text-muted)">▶</span>
+    </h2>
+    <div hidden>
+      ${courseHoleStatsHTML(courseStats)}
+    </div>
   `;
 }
 
 function hcpTrendSVG(history) {
-  if (history.length < 2) return '<p class="text-muted">Mindestens 2 vollständige 18-Loch-Runden für Trend benötigt.</p>';
+  if (!history.length) return '<p class="text-muted">Mindestens 1 vollständige 18-Loch-Runde für Trend benötigt.</p>';
+
+  const points = [{ date: history[0].date, hcp: 36 }, ...history];
 
   const W = 320, H = 160, padLeft = 38, padRight = 16, padTop = 16, padBottom = 22;
-  const values = history.map(r => r.hcp);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
+  const yMin = 0, yMax = 36;
+  const range = yMax - yMin;
 
-  function x(i) { return padLeft + (i / (history.length - 1)) * (W - padLeft - padRight); }
-  function y(v) { return padTop + ((max - v) / range) * (H - padTop - padBottom); }
+  function x(i) { return padLeft + (i / (points.length - 1)) * (W - padLeft - padRight); }
+  function y(v) { return padTop + ((yMax - v) / range) * (H - padTop - padBottom); }
 
-  const ticks = [max, (max + min) / 2, min];
+  const ticks = [36, 18, 0];
   const gridLines = ticks.map(v => `
     <line x1="${padLeft}" y1="${y(v)}" x2="${W - padRight}" y2="${y(v)}" stroke="var(--border-light)" stroke-width="1"/>
     <text x="${padLeft - 4}" y="${y(v) + 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">${v.toFixed(1)}</text>
   `).join('');
 
-  const points = history.map((r, i) => `${x(i)},${y(r.hcp)}`).join(' ');
-  const dots = history.map((r, i) => `
-    <circle cx="${x(i)}" cy="${y(r.hcp)}" r="4" fill="var(--primary)">
-      <title>${new Date(r.date).toLocaleDateString('de-DE')}: ${r.hcp.toFixed(1)}</title>
+  const linePoints = points.map((r, i) => `${x(i)},${y(r.hcp)}`).join(' ');
+  const dots = points.map((r, i) => `
+    <circle cx="${x(i)}" cy="${y(r.hcp)}" r="4" fill="${i === 0 ? 'var(--text-muted)' : 'var(--primary)'}">
+      <title>${i === 0 ? 'Start' : new Date(r.date).toLocaleDateString('de-DE')}: ${r.hcp.toFixed(1)}</title>
     </circle>
   `).join('');
 
   return `
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;border:1px solid var(--border-light);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-sm);">
       ${gridLines}
-      <polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+      <polyline points="${linePoints}" fill="none" stroke="var(--primary)" stroke-width="2"/>
       ${dots}
-      <text x="${padLeft}" y="${H - 4}" font-size="10" fill="var(--text-muted)">${new Date(history[0].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
-      <text x="${W - padRight}" y="${H - 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">${new Date(history[history.length-1].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
+      <text x="${padLeft}" y="${H - 4}" font-size="10" fill="var(--text-muted)">Start</text>
+      <text x="${W - padRight}" y="${H - 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">${new Date(points[points.length-1].date).toLocaleDateString('de-DE', {month:'short', day:'numeric'})}</text>
     </svg>
   `;
 }
