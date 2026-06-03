@@ -1,5 +1,6 @@
 import { getCourses, addCourse, deleteCourse, updateCourse, getCourse, getMyProfile } from '../supabase.js';
 import { icons } from '../components/icons.js';
+import { dmsToDecimal } from '../utils/geo.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -149,6 +150,7 @@ export async function render(container) {
       <label style="font-weight:600;display:block;margin-bottom:6px">Platzname</label>
       <input id="edit-course-name" value="${escapeHTML(currentName)}" style="margin-bottom:16px;">
       <button class="btn-primary" id="save-course-btn">Speichern</button>
+      <button id="coord-import-btn" style="margin-top:12px;width:100%;padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-2);cursor:pointer;font-size:0.95rem;">Koordinaten importieren</button>
       <button class="btn-danger" id="delete-course-btn" style="margin-top:12px;width:100%">Platz löschen</button>
     `);
 
@@ -160,11 +162,100 @@ export async function render(container) {
       closeSheet();
       await refresh();
     });
+    sheet.querySelector('#coord-import-btn').addEventListener('click', async () => {
+      const course = await getCourse(id);
+      showCoordImportStep(course);
+    });
     sheet.querySelector('#delete-course-btn').addEventListener('click', async () => {
       await deleteCourse(id);
       closeSheet();
       await refresh();
     });
+  }
+
+  function showCoordImportStep(course) {
+    const holes = course.holes.map(h => ({ ...h }));
+    showSheet(`
+      <a href="#" id="back-to-edit" style="display:inline-flex;align-items:center;gap:4px;margin-bottom:16px;color:var(--text-muted);text-decoration:none">${icons.chevronLeft} Zurück</a>
+      <h3 style="margin:0 0 16px">Koordinaten importieren</h3>
+      <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">
+        18 Zeilen, eine pro Loch. Format: DMS (<code>54°09'54.5"N 9°52'33.7"E</code>) oder Dezimal (<code>54.165,9.876</code>).
+      </p>
+      <textarea id="coord-textarea" style="width:100%;height:240px;font-family:monospace;font-size:13px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);resize:vertical" placeholder="Zeile 1 = Loch 1&#10;54°09'54.5"N 9°52'33.7"E&#10;..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <label style="flex:1;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-2);cursor:pointer;text-align:center;font-size:0.9rem">
+          Aus Datei laden
+          <input type="file" id="coord-file" accept=".txt,.csv" style="display:none">
+        </label>
+        <button id="coord-apply-btn" class="btn-primary" style="flex:1">Übernehmen</button>
+      </div>
+      <div id="coord-status" style="margin-top:12px;font-size:.85rem;color:var(--text-muted);min-height:20px"></div>
+    `);
+
+    const sheet = document.getElementById('bottom-sheet');
+    sheet.querySelector('#back-to-edit').addEventListener('click', e => {
+      e.preventDefault();
+      showEditStep(course.id, course.name);
+    });
+
+    sheet.querySelector('#coord-file').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        sheet.querySelector('#coord-textarea').value = reader.result;
+      };
+      reader.readAsText(file);
+    });
+
+    sheet.querySelector('#coord-apply-btn').addEventListener('click', async () => {
+      const raw = sheet.querySelector('#coord-textarea').value.trim().split('\n').filter(Boolean);
+      const status = sheet.querySelector('#coord-status');
+
+      if (raw.length !== 18) {
+        status.textContent = `Fehler: ${raw.length} Zeilen, erwartet 18.`;
+        return;
+      }
+
+      let ok = 0, err = 0;
+      for (let i = 0; i < 18; i++) {
+        const parsed = parseCoordLine(raw[i]);
+        if (parsed) {
+          holes[i].pinLat = parsed.lat;
+          holes[i].pinLng = parsed.lng;
+          ok++;
+        } else {
+          err++;
+        }
+      }
+
+      if (err > 0) {
+        status.textContent = `${ok} übernommen, ${err} Fehler. Korrigieren und erneut versuchen.`;
+        status.style.color = 'var(--danger)';
+        return;
+      }
+
+      await updateCourse({ ...course, holes });
+      status.textContent = '✓ Alle 18 Koordinaten gespeichert.';
+      status.style.color = 'var(--primary)';
+      closeSheet();
+      await refresh();
+    });
+  }
+
+  function parseCoordLine(line) {
+    line = line.trim();
+    if (!line) return null;
+    if (line.includes('°')) {
+      return dmsToDecimal(line);
+    }
+    const parts = line.split(/[,\s]+/);
+    if (parts.length >= 2) {
+      const lat = parseFloat(parts[0].replace(',', '.'));
+      const lng = parseFloat(parts[1].replace(',', '.'));
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    }
+    return null;
   }
 
   await refresh();

@@ -1,4 +1,4 @@
-const CACHE = 'sys-v26';
+const CACHE = 'sys-v27';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   './icon-192.png',
   './icon-512.png',
   './utils/golf.js',
+  './utils/geo.js',
   './components/nav-bar.js',
   './components/score-cell.js',
   './components/icons.js',

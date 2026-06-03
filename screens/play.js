@@ -2,6 +2,7 @@ import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync } from '../db
 import { createActiveRound, syncParticipantScores, getCloudRoundsForPlayers } from '../supabase.js';
 import { getScoreClass, getScoreLabel, computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
+import { haversineMeters } from '../utils/geo.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -37,11 +38,122 @@ export async function render(container, params) {
   function currentPar() { return draft.holes[holeIndex].par; }
 
   let currentScores = {};
+  let watchId = null;
+  let currentPosition = null;
+  let currentDistance = null;
+  let holeMap = null;
+  let mapMarker = null;
+  let mapCircle = null;
 
   function initScores() {
     roundPlayers.forEach(p => {
       currentScores[p.id] = draft.scores[p.id][holeIndex] ?? currentPar();
     });
+  }
+
+  function initMap() {
+    const hole = draft.holes[holeIndex];
+    if (hole?.pinLat == null) return;
+
+    const mapEl = container.querySelector('#hole-map');
+    if (!mapEl) return;
+
+    holeMap = L.map(mapEl, {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: true,
+    });
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+    }).addTo(holeMap);
+
+    mapMarker = L.marker([hole.pinLat, hole.pinLng]).addTo(holeMap);
+
+    if (currentPosition) {
+      mapCircle = L.circle([currentPosition.lat, currentPosition.lng], {
+        radius: 3,
+        color: '#2196F3',
+        fillColor: '#2196F3',
+        fillOpacity: 0.8,
+        weight: 2,
+      }).addTo(holeMap);
+      holeMap.fitBounds([
+        [hole.pinLat, hole.pinLng],
+        [currentPosition.lat, currentPosition.lng],
+      ], { padding: [30, 30], maxZoom: 18 });
+    } else {
+      holeMap.setView([hole.pinLat, hole.pinLng], 16);
+    }
+  }
+
+  function updateMap() {
+    const hole = draft.holes[holeIndex];
+    if (!holeMap || !hole?.pinLat) return;
+
+    if (mapMarker) {
+      mapMarker.setLatLng([hole.pinLat, hole.pinLng]);
+    } else {
+      mapMarker = L.marker([hole.pinLat, hole.pinLng]).addTo(holeMap);
+    }
+
+    if (currentPosition) {
+      if (mapCircle) {
+        mapCircle.setLatLng([currentPosition.lat, currentPosition.lng]);
+      } else {
+        mapCircle = L.circle([currentPosition.lat, currentPosition.lng], {
+          radius: 3,
+          color: '#2196F3',
+          fillColor: '#2196F3',
+          fillOpacity: 0.8,
+          weight: 2,
+        }).addTo(holeMap);
+      }
+      holeMap.fitBounds([
+        [hole.pinLat, hole.pinLng],
+        [currentPosition.lat, currentPosition.lng],
+      ], { padding: [30, 30], maxZoom: 18 });
+    }
+  }
+
+  function destroyMap() {
+    if (holeMap) {
+      holeMap.remove();
+      holeMap = null;
+      mapMarker = null;
+      mapCircle = null;
+    }
+  }
+
+  function startGpsWatch() {
+    if (!navigator.geolocation) return;
+    const hole = draft.holes[holeIndex];
+    if (hole?.pinLat == null) return;
+
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+        currentPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const hole = draft.holes[holeIndex];
+        if (hole?.pinLat != null) {
+          currentDistance = haversineMeters(
+            currentPosition.lat, currentPosition.lng,
+            hole.pinLat, hole.pinLng
+          );
+        }
+        const el = container.querySelector('#distance-display');
+        if (el) el.textContent = currentDistance != null ? `${currentDistance} m zum Loch` : 'GPS...';
+        updateMap();
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 3000 }
+    );
+  }
+
+  function stopGpsWatch() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
   }
 
   function updateHash() {
@@ -127,6 +239,9 @@ export async function render(container, params) {
         <div style="font-size:56px;font-weight:700;line-height:1;letter-spacing:-3px;color:var(--text);">${holeIndex + 1}</div>
         <div class="par-badge" style="display:inline-flex;margin-top:10px;">Par ${par}</div>
       </button>
+
+      <div id="hole-map" style="width:100%;height:180px;border-radius:var(--radius);margin-top:12px;overflow:hidden;${draft.holes[holeIndex]?.pinLat != null ? '' : 'display:none'};"></div>
+      <div id="distance-display" style="text-align:center;font-size:16px;font-weight:600;color:var(--primary);margin:${draft.holes[holeIndex]?.pinLat != null ? '8px 0 0' : '0'};min-height:24px">${currentDistance != null ? currentDistance + ' m zum Loch' : 'GPS...'}</div>
 
       <div id="player-cards">
         ${roundPlayers.map(p => playerCardHTML(p)).join('')}
@@ -270,8 +385,11 @@ export async function render(container, params) {
       holeIndex++;
       initScores();
       updateHash();
+      destroyMap();
       draw();
+      setTimeout(initMap, 50);
     } else {
+      stopGpsWatch();
       location.hash = `#scorecard?draftId=${draftId}`;
     }
   }
@@ -281,8 +399,11 @@ export async function render(container, params) {
       holeIndex--;
       initScores();
       updateHash();
+      destroyMap();
       draw();
+      setTimeout(initMap, 50);
     } else {
+      stopGpsWatch();
       location.hash = '#home';
     }
   }
@@ -292,7 +413,9 @@ export async function render(container, params) {
     initScores();
     updateHash();
     closeOverview();
+    destroyMap();
     draw();
+    setTimeout(initMap, 50);
   }
 
   // ── Init ─────────────────────────────────────────────────────
@@ -301,6 +424,17 @@ export async function render(container, params) {
 
   initScores();
   draw();
+  setTimeout(initMap, 50);
+  startGpsWatch();
+
+  const stopOnLeave = () => {
+    if (!document.body.contains(container)) {
+      stopGpsWatch();
+      destroyMap();
+      document.removeEventListener('click', stopOnLeave);
+    }
+  };
+  document.addEventListener('click', stopOnLeave);
 
   // Reconnect: sync pending scores when internet returns
   window.addEventListener('online', function onReconnect() {
