@@ -19,6 +19,7 @@ export async function render(container) {
   const stats = computePlayerStats(rounds, courseMap, user.id);
   const hcpResult = computeHandicap(rounds, courseMap, user.id);
   const byPar = computeBreakdownByPar(rounds, courseMap, user.id);
+  const courseStats = courseHoleStats(rounds, user.id);
 
   container.innerHTML = `
     <h1>Statistiken</h1>
@@ -44,6 +45,9 @@ export async function render(container) {
     <div hidden>
       ${breakdownByParHTML(byPar)}
     </div>
+
+    <h2 class="mt-16">Bahnen-Statistik</h2>
+    ${courseHoleStatsHTML(courseStats)}
   `;
 }
 
@@ -114,6 +118,91 @@ function breakdownHTML(bd) {
     `;
   }).join('');
   return `<div class="card" style="flex-direction:column;align-items:stretch;gap:0;">${rows}</div>`;
+}
+
+function courseHoleStats(rounds, userId) {
+  // Group rounds by course name
+  const byCourseName = new Map();
+  for (const r of rounds) {
+    const name = r.courseName || 'Unbekannt';
+    if (!byCourseName.has(name)) byCourseName.set(name, []);
+    byCourseName.get(name).push(r);
+  }
+
+  // For each course, compute per-hole avg vs par
+  const result = [];
+  for (const [name, courseRounds] of byCourseName) {
+    const holes = Array.from({ length: 18 }, (_, i) => {
+      const scores = courseRounds
+        .map(r => ({ score: (r.scores[userId] ?? [])[i], par: r.holes[i]?.par }))
+        .filter(s => s.score != null && s.par != null);
+      if (!scores.length) return { hole: i + 1, par: courseRounds[0].holes[i]?.par ?? null, avg: null, count: 0 };
+      const avgVsPar = scores.reduce((s, v) => s + (v.score - v.par), 0) / scores.length;
+      return { hole: i + 1, par: courseRounds[0].holes[i]?.par ?? null, avg: avgVsPar, count: scores.length };
+    });
+    result.push({ name, rounds: courseRounds.length, holes });
+  }
+  return result;
+}
+
+function courseHoleStatsHTML(courses) {
+  if (!courses.length) return '';
+
+  function holeColor(avg) {
+    if (avg === null) return 'var(--text-muted)';
+    if (avg < 0) return '#2e7d32';
+    if (avg > 0) return '#bf360c';
+    return 'var(--text-muted)';
+  }
+
+  function holeListHTML(course) {
+    const sorted = [...course.holes].sort((a, b) => {
+      if (a.avg === null && b.avg === null) return 0;
+      if (a.avg === null) return 1;
+      if (b.avg === null) return -1;
+      return a.avg - b.avg;
+    });
+    return `
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">aus ${course.rounds} Runde${course.rounds !== 1 ? 'n' : ''}</div>
+      ${sorted.map(h => {
+        const avgStr = h.avg === null ? '—' : (h.avg >= 0 ? `+${h.avg.toFixed(2)}` : h.avg.toFixed(2));
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:14px;">
+            <span>Bahn ${h.hole}${h.par != null ? ` <span style="color:var(--text-muted);font-size:12px;">(Par ${h.par})</span>` : ''}</span>
+            <span style="font-weight:600;color:${holeColor(h.avg)}">${avgStr}</span>
+          </div>
+        `;
+      }).join('')}
+    `;
+  }
+
+  if (courses.length === 1) {
+    return `
+      <div class="card" style="flex-direction:column;align-items:stretch;gap:0;">
+        ${holeListHTML(courses[0])}
+      </div>
+    `;
+  }
+
+  // Pre-render all panels; show/hide on tab click
+  const panels = courses.map((c, i) => `
+    <div id="chs-panel-${i}" ${i !== 0 ? 'hidden' : ''}>
+      ${holeListHTML(c)}
+    </div>
+  `).join('');
+
+  const tabs = courses.map((c, i) => `
+    <button
+      onclick="document.querySelectorAll('[id^=chs-panel-]').forEach((p,j)=>p.hidden=j!==${i});document.querySelectorAll('[id^=chs-tab-]').forEach((t,j)=>{t.style.background=j===${i}?'var(--primary)':'none';t.style.color=j===${i}?'white':'inherit';})"
+      id="chs-tab-${i}"
+      style="padding:4px 12px;border:1px solid var(--border);border-radius:20px;font-size:13px;cursor:pointer;background:${i === 0 ? 'var(--primary)' : 'none'};color:${i === 0 ? 'white' : 'inherit'};"
+    >${c.name}</button>
+  `).join('');
+
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">${tabs}</div>
+    <div class="card" style="flex-direction:column;align-items:stretch;gap:0;">${panels}</div>
+  `;
 }
 
 function breakdownByParHTML(byPar) {
