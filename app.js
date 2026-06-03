@@ -1,5 +1,5 @@
 import { renderNavBar } from './components/nav-bar.js';
-import { getSession } from './supabase.js';
+import { getSession, subscribeToNotifications } from './supabase.js';
 
 const PUBLIC_ROUTES = new Set(['#login']);
 
@@ -66,3 +66,7 @@ async function navigate() {
 
 window.addEventListener('hashchange', navigate);
 navigate();
+
+getSession().then(session => {
+  if (session) subscribeToNotifications();
+});
