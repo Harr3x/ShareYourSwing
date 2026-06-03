@@ -5,6 +5,7 @@ import { icons } from '../components/icons.js';
 
 export async function render(container, params) {
   const { draftId } = params;
+  const fromHole = parseInt(params.fromHole ?? '0', 10);
   let draft = await getDraft(draftId);
   if (!draft) {
     container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
@@ -74,7 +75,7 @@ export async function render(container, params) {
           </table>
         </div>
         <div style="margin-top:16px;">
-          <a href="#play?draftId=${draftId}&hole=0" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
+          <a href="#play?draftId=${draftId}&hole=${fromHole}" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
             Weiter spielen ${icons.chevronRight}
           </a>
         </div>

@@ -1,6 +1,6 @@
 import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync } from '../db.js';
-import { createActiveRound, syncParticipantScores } from '../supabase.js';
-import { getScoreClass, getScoreLabel } from '../utils/golf.js';
+import { createActiveRound, syncParticipantScores, getCloudRoundsForPlayers } from '../supabase.js';
+import { getScoreClass, getScoreLabel, computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 
 function escapeHTML(str) {
@@ -22,6 +22,17 @@ export async function render(container, params) {
   }
 
   const roundPlayers = draft.playerIds.map(id => ({ id, name: draft.playerNames[id] || id }));
+
+  let hcpMap = {};
+  try {
+    const { rounds, courseMap } = await getCloudRoundsForPlayers(draft.playerIds);
+    for (const pid of draft.playerIds) {
+      const { handicap } = computeHandicap(rounds, courseMap, pid);
+      hcpMap[pid] = handicap ?? 36;
+    }
+  } catch (e) {
+    for (const pid of draft.playerIds) hcpMap[pid] = 36;
+  }
 
   function currentPar() { return draft.holes[holeIndex].par; }
 
@@ -53,6 +64,26 @@ export async function render(container, params) {
     }).join('');
   }
 
+  function vsParSoFar(pid) {
+    let diff = 0, hasAny = false;
+    for (let i = 0; i < 18; i++) {
+      const s = draft.scores[pid][i];
+      if (s != null) { diff += s - draft.holes[i].par; hasAny = true; }
+    }
+    return hasAny ? diff : null;
+  }
+
+  function totalChipHTML(pid) {
+    const diff = vsParSoFar(pid);
+    if (diff === null) return '';
+    const isOver = diff > (hcpMap[pid] ?? 36);
+    const label = diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`;
+    const style = isOver
+      ? 'background:#fdf0ee;border:1px solid #e8b4ae;color:#c0392b;'
+      : 'background:var(--surface-2);border:1px solid var(--border);color:var(--text);';
+    return `<span style="border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;${style}">${label}</span>`;
+  }
+
   function scoreBadgeContent(score, par) {
     if (score === 0) return { cls: 'golf-par', display: '—', label: 'Nicht gespielt' };
     return { cls: getScoreClass(score, par), display: score, label: getScoreLabel(score, par) };
@@ -64,7 +95,10 @@ export async function render(container, params) {
     const { cls, display, label } = scoreBadgeContent(score, par);
     return `
       <div class="card" data-card="${p.id}" style="flex-direction:column;align-items:stretch;gap:12px;">
-        <div style="font-size:17px;font-weight:600;letter-spacing:-0.2px;">${escapeHTML(p.name)}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:17px;font-weight:600;letter-spacing:-0.2px;">${escapeHTML(p.name)}</div>
+          ${totalChipHTML(p.id)}
+        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <button data-minus="${p.id}" style="width:52px;height:52px;min-height:unset;border-radius:50%;font-size:26px;font-weight:300;background:var(--surface-2);border:1.5px solid var(--border);box-shadow:var(--shadow-sm);display:inline-flex;align-items:center;justify-content:center;">−</button>
           <div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
@@ -85,7 +119,7 @@ export async function render(container, params) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px;">
         <button id="btn-back" class="btn-ghost" style="padding:0 12px;font-size:14px;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">${icons.chevronLeft} Zurück</button>
         <div class="hole-progress">${progressDots()}</div>
-        <a href="#scorecard?draftId=${draftId}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>
+        <a href="#scorecard?draftId=${draftId}&fromHole=${holeIndex}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>
       </div>
 
       <button id="btn-hole-overview" style="width:100%;background:none;border:none;border-radius:var(--radius);padding:8px 16px 16px;min-height:unset;text-align:center;cursor:pointer;transition:background 0.15s ease;" title="Bahn wählen">
