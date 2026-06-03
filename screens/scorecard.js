@@ -1,5 +1,5 @@
 import { getDraft, saveDraftScore, deleteDraft, setCloudRoundId, setPendingSync, removePlayerFromDraft } from '../db.js';
-import { createActiveRound, syncParticipantScores, publishActiveRound, deleteActiveRound, removeParticipant } from '../supabase.js';
+import { createActiveRound, syncParticipantScores, publishActiveRound, deleteActiveRound, removeParticipant, sendPushToFriends } from '../supabase.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
 
@@ -159,6 +159,7 @@ export async function render(container, params) {
       );
 
       await publishActiveRound(cloudRoundId);
+      sendPushToFriends(draft.courseName); // fire and forget
       await deleteDraft(draftId);
       shareBtn.textContent = '✓ Geteilt!';
       setTimeout(() => { location.hash = '#home'; }, 1200);

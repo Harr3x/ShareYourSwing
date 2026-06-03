@@ -378,3 +378,11 @@ export async function subscribeToNotifications() {
     { onConflict: 'user_id' }
   );
 }
+
+export async function sendPushToFriends(courseName) {
+  try {
+    await supabase.functions.invoke('send-push', { body: { courseName } });
+  } catch (e) {
+    console.error('Push notification failed:', e);
+  }
+}
