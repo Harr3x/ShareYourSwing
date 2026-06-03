@@ -1,4 +1,4 @@
-const CACHE = 'sys-v21';
+const CACHE = 'sys-v22';
 const ASSETS = [
   './',
   './index.html',
@@ -48,4 +48,19 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.match(e.request).then(cached => cached ?? fetch(e.request))
   );
+});
+
+self.addEventListener('push', e => {
+  const data = e.data?.json() ?? {};
+  e.waitUntil(
+    self.registration.showNotification(data.title ?? 'ShareYourSwing', {
+      body: data.body ?? '',
+      icon: data.icon ?? '/icon-192.png',
+    })
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.openWindow('/'));
 });
