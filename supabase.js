@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY } from './config.js';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -342,4 +342,39 @@ export async function deleteActiveRound(roundId) {
   await supabase.from('round_participants').delete().eq('round_id', roundId);
   const { error } = await supabase.from('cloud_rounds').delete().eq('id', roundId);
   if (error) throw error;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+export async function subscribeToNotifications() {
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+
+  const isInstalled = window.matchMedia('(display-mode: standalone)').matches
+    || navigator.standalone === true;
+  if (!isInstalled) return;
+
+  if (Notification.permission === 'denied') return;
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return;
+
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  const sub = existing ?? await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  await supabase.from('push_subscriptions').upsert(
+    { user_id: user.id, subscription: sub.toJSON() },
+    { onConflict: 'user_id' }
+  );
 }
