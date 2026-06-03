@@ -58,7 +58,7 @@ function recentRoundsHTML(rounds) {
     const total = totalScore(r.myScores);
     const diff = vsParStr(r.myScores, r.holes);
     return `
-      <div class="card" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:4px;" onclick="location.hash='#cloud-scorecard?roundId=${r.id}'">
+      <div class="card" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:4px;" onclick="location.hash='#cloud-scorecard?roundId=${r.id}&from=home'">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">${escapeHTML(r.courseName)}</span>
           <span style="color:var(--text-muted);display:flex;align-items:center">${icons.chevronRight}</span>

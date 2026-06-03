@@ -3,7 +3,9 @@ import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
 
 export async function render(container, params) {
-  const { roundId } = params;
+  const { roundId, from } = params;
+  const backHref = from === 'home' ? '#home' : '#feed';
+  const backLabel = from === 'home' ? 'Home' : 'Feed';
   const round = await getCloudRound(roundId);
 
   const participants = round.round_participants || [];
@@ -39,7 +41,7 @@ export async function render(container, params) {
   container.innerHTML = `
     <div class="scorecard-screen">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <a href="#feed" style="display:inline-flex;align-items:center;gap:2px;color:var(--text-muted);text-decoration:none;font-size:14px">${icons.chevronLeft} Feed</a>
+        <a href="${backHref}" style="display:inline-flex;align-items:center;gap:2px;color:var(--text-muted);text-decoration:none;font-size:14px">${icons.chevronLeft} ${backLabel}</a>
         <div style="flex:1;min-width:0;">
           <h1 style="margin:0;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${round.course_name}</h1>
           <div style="font-size:13px;color:var(--text-muted)">${date}</div>
