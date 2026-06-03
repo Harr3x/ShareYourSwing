@@ -25,7 +25,8 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  const { courseName } = await req.json();
+  const body = await req.json();
+  const courseName = String(body.courseName ?? '').slice(0, 100);
 
   const { data: profile } = await admin
     .from('profiles')
@@ -73,6 +74,7 @@ Deno.serve(async (req) => {
         await webpush.sendNotification(subscription, payload);
       } catch (err: any) {
         if (err.statusCode === 410) staleIds.push(id);
+        else console.error('Push delivery error:', err.statusCode, err.message);
       }
     })
   );

@@ -373,10 +373,11 @@ export async function subscribeToNotifications() {
   const user = await getCurrentUser();
   if (!user) return;
 
-  await supabase.from('push_subscriptions').upsert(
+  const { error } = await supabase.from('push_subscriptions').upsert(
     { user_id: user.id, subscription: sub.toJSON() },
     { onConflict: 'user_id' }
   );
+  if (error) console.error('Failed to save push subscription:', error);
 }
 
 export async function sendPushToFriends(courseName) {
