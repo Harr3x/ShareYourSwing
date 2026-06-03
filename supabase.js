@@ -197,12 +197,13 @@ export async function getUserRounds() {
     .from('round_participants')
     .select(`
       scores,
-      cloud_rounds!inner(id, holes, date, status)
+      cloud_rounds!inner(id, course_name, holes, date, status)
     `)
     .eq('user_id', user.id);
   if (error) throw error;
   return (data || []).filter(p => p.cloud_rounds?.status === 'published').map(p => ({
     courseId: p.cloud_rounds.id,
+    courseName: p.cloud_rounds.course_name,
     playerIds: [user.id],
     scores: { [user.id]: p.scores },
     holes: p.cloud_rounds.holes,
