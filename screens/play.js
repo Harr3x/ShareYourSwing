@@ -45,6 +45,13 @@ export async function render(container, params) {
   let mapMarker = null;
   let mapCircle = null;
 
+  const flagIcon = L.divIcon({
+    className: '',
+    html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34" width="24" height="34"><circle cx="8" cy="5" r="2.5" fill="#555"/><line x1="8" y1="7" x2="8" y2="34" stroke="#555" stroke-width="2.5" stroke-linecap="round"/><path d="M8 7 L22 11 L8 15 Z" fill="#e53935"/></svg>`,
+    iconSize: [24, 34],
+    iconAnchor: [12, 34],
+  });
+
   function initScores() {
     roundPlayers.forEach(p => {
       currentScores[p.id] = draft.scores[p.id][holeIndex] ?? currentPar();
@@ -68,7 +75,7 @@ export async function render(container, params) {
       maxZoom: 19,
     }).addTo(holeMap);
 
-    mapMarker = L.marker([hole.pinLat, hole.pinLng]).addTo(holeMap);
+    mapMarker = L.marker([hole.pinLat, hole.pinLng], { icon: flagIcon }).addTo(holeMap);
 
     if (currentPosition) {
       mapCircle = L.circle([currentPosition.lat, currentPosition.lng], {
@@ -94,7 +101,7 @@ export async function render(container, params) {
     if (mapMarker) {
       mapMarker.setLatLng([hole.pinLat, hole.pinLng]);
     } else {
-      mapMarker = L.marker([hole.pinLat, hole.pinLng]).addTo(holeMap);
+      mapMarker = L.marker([hole.pinLat, hole.pinLng], { icon: flagIcon }).addTo(holeMap);
     }
 
     if (currentPosition) {

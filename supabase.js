@@ -13,6 +13,12 @@ export async function getCurrentUser() {
   return data.user;
 }
 
+export async function updateProfile(updates) {
+  const user = await getCurrentUser();
+  const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
+  if (error) throw error;
+}
+
 export async function signUp(email, password, username) {
   const { data, error } = await supabase.auth.signUp({
     email,

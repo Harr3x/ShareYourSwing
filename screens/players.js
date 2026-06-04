@@ -1,6 +1,6 @@
 import { computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
-import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers } from '../supabase.js';
+import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers, getMyProfile, updateProfile } from '../supabase.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -169,12 +169,12 @@ export async function render(container) {
             <div style="flex:1;min-width:0;">
               <div style="font-weight:600">
                 ${escapeHTML(p.name)}
-                ${isMe ? '<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:500;vertical-align:middle">Du</span>' : ''}
+                ${isMe ? `<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:500;vertical-align:middle">Du</span>` : ''}
                 <span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span>
               </div>
               ${chips ? `<div class="achievement-row">${chips}</div>` : ''}
             </div>
-            ${!isMe ? `<button class="btn-icon" data-edit="${p.id}" data-friendship-id="${friendshipId}" data-player-name="${escapeHTML(p.name)}" aria-label="Optionen" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>` : ''}
+            ${!isMe ? `<button class="btn-icon" data-edit="${p.id}" data-friendship-id="${friendshipId}" data-player-name="${escapeHTML(p.name)}" aria-label="Optionen" style="flex-shrink:0;margin-top:2px;">${icons.edit}</button>` : `<button class="btn-icon" id="settings-btn" aria-label="Einstellungen" title="Einstellungen" style="flex-shrink:0;margin-top:2px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>`}
           </div>
         `;
       }).join('');
@@ -244,10 +244,50 @@ export async function render(container) {
     });
   }
 
+  async function showSettingsSheet() {
+    const profile = await getMyProfile();
+    showSheet(`
+      <h3 style="margin:0 0 16px">Einstellungen</h3>
+      <label style="font-weight:600;display:block;margin-bottom:4px">Benutzername</label>
+      <input id="settings-username" value="${escapeHTML(profile.username || '')}" style="margin-bottom:16px;" autocomplete="off">
+      <p id="settings-msg" style="font-size:.9rem;margin-bottom:12px;display:none"></p>
+      <button class="btn-primary" id="save-settings-btn" style="width:100%;margin-bottom:8px">Speichern</button>
+      <button class="btn-danger" id="delete-profile-btn" style="width:100%">Konto und alle Daten löschen</button>
+    `);
+    const sheet = document.getElementById('bottom-sheet');
+    sheet.querySelector('#save-settings-btn').addEventListener('click', async () => {
+      const username = sheet.querySelector('#settings-username').value.trim();
+      const msgEl = sheet.querySelector('#settings-msg');
+      if (!username) { msgEl.textContent = 'Benutzername darf nicht leer sein.'; msgEl.style.color = 'var(--error, #e53e3e)'; msgEl.style.display = 'block'; return; }
+      try {
+        await updateProfile({ username });
+        msgEl.textContent = 'Gespeichert!';
+        msgEl.style.color = 'var(--primary)';
+        msgEl.style.display = 'block';
+        setTimeout(() => closeSheet(), 800);
+      } catch (err) {
+        msgEl.textContent = err.message;
+        msgEl.style.color = 'var(--error, #e53e3e)';
+        msgEl.style.display = 'block';
+      }
+    });
+    sheet.querySelector('#delete-profile-btn').addEventListener('click', async () => {
+      if (!confirm('Wirklich alle Daten unwiderruflich löschen?')) return;
+      const { supabase } = await import('../supabase.js');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { error } = await supabase.functions.invoke('delete-account', { headers: { Authorization: `Bearer ${session.access_token}` } });
+      if (error) { alert('Fehler: ' + error.message); return; }
+      signOut();
+    });
+  }
+
   await refresh();
 
   container.querySelector('#add-friend-btn').addEventListener('click', showAddFriendSheet);
   container.querySelector('#logout-btn').addEventListener('click', () => signOut());
+  const settingsBtn = container.querySelector('#settings-btn');
+  if (settingsBtn) settingsBtn.addEventListener('click', showSettingsSheet);
 
   container.addEventListener('click', e => {
     const btn = e.target.closest('[data-edit]');
