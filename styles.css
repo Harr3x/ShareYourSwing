@@ -211,6 +211,16 @@ button:active { filter: brightness(0.93); transform: scale(0.97); }
   width: 32px; height: 32px;
   font-weight: 400;
 }
+.golf-muted {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  font-weight: 400;
+  color: var(--text-muted);
+  border: 1.5px dashed var(--border);
+  border-radius: 50%;
+}
 .golf-bogey {
   display: inline-flex;
   align-items: center;

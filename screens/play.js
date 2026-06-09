@@ -54,7 +54,7 @@ export async function render(container, params) {
 
   function initScores() {
     roundPlayers.forEach(p => {
-      currentScores[p.id] = draft.scores[p.id][holeIndex] ?? currentPar();
+      currentScores[p.id] = draft.scores[p.id][holeIndex] ?? null;
     });
   }
 
@@ -204,6 +204,7 @@ export async function render(container, params) {
   }
 
   function scoreBadgeContent(score, par) {
+    if (score == null) return { cls: 'golf-muted', display: '−', label: '' };
     if (score === 0) return { cls: 'golf-par', display: '—', label: 'Nicht gespielt' };
     return { cls: getScoreClass(score, par), display: score, label: getScoreLabel(score, par) };
   }
@@ -469,8 +470,13 @@ export async function render(container, params) {
     }
     const plus = e.target.closest('[data-plus]');
     if (plus) {
-      currentScores[plus.dataset.plus]++;
-      updateScoreDisplay(plus.dataset.plus);
+      const pid = plus.dataset.plus;
+      if (currentScores[pid] == null) {
+        currentScores[pid] = currentPar();
+      } else {
+        currentScores[pid]++;
+      }
+      updateScoreDisplay(pid);
       return;
     }
   });
