@@ -148,7 +148,7 @@ export async function render(container, params) {
           );
         }
         const el = container.querySelector('#distance-display');
-        if (el) el.textContent = currentDistance != null ? `${currentDistance} m zum Loch` : 'GPS...';
+        if (el) el.textContent = currentDistance != null ? `${currentDistance}m zum Loch` : 'GPS...';
         updateMap();
       },
       () => {},
@@ -247,8 +247,11 @@ export async function render(container, params) {
         <div class="par-badge" style="display:inline-flex;margin-top:10px;">Par ${par}</div>
       </button>
 
-      <div id="hole-map" style="width:100%;height:180px;border-radius:var(--radius);margin-top:12px;overflow:hidden;${draft.holes[holeIndex]?.pinLat != null ? '' : 'display:none'};"></div>
-      <div id="distance-display" style="text-align:center;font-size:16px;font-weight:600;color:var(--primary);margin:${draft.holes[holeIndex]?.pinLat != null ? '8px 0 0' : '0'};min-height:24px">${currentDistance != null ? currentDistance + ' m zum Loch' : 'GPS...'}</div>
+      ${draft.holes[holeIndex]?.pinLat != null ? `
+      <div id="map-container" style="border-radius:var(--radius);overflow:hidden;margin-top:12px;margin-bottom:16px;background:var(--surface);border:1.5px solid var(--border);box-shadow:var(--shadow-sm);">
+        <div id="hole-map" style="width:100%;height:180px;"></div>
+        <div id="distance-display" style="text-align:center;font-size:16px;font-weight:600;color:var(--text);padding:8px 0 10px;min-height:24px">${currentDistance != null ? currentDistance + 'm zum Loch' : 'GPS...'}</div>
+      </div>` : ''}
 
       <div id="player-cards">
         ${roundPlayers.map(p => playerCardHTML(p)).join('')}
