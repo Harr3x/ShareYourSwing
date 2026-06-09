@@ -182,6 +182,16 @@ export async function render(container, params) {
       draft = await getDraft(draftId);
       const cloudRoundId = await ensureCloudRound();
 
+      // Partner's self-entered scores live in the cloud but not in local IndexedDB;
+      // re-merge before final sync so they aren't overwritten.
+      try {
+        const live = await getActiveRound(cloudRoundId);
+        live.players.forEach(p => {
+          const local = draft.scores[p.id] || Array(18).fill(null);
+          draft.scores[p.id] = local.map((v, i) => v != null ? v : (p.scores[i] ?? null));
+        });
+      } catch (e) { /* fallback to local draft scores */ }
+
       // Final sync of all scores
       await Promise.all(
         draft.playerIds.map(pid =>
