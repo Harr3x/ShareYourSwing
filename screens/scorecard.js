@@ -1,5 +1,5 @@
 import { getDraft, saveDraftScore, deleteDraft, setCloudRoundId, setPendingSync, removePlayerFromDraft } from '../db.js';
-import { createActiveRound, syncParticipantScores, publishActiveRound, deleteActiveRound, removeParticipant, sendPushToFriends } from '../supabase.js';
+import { createActiveRound, syncParticipantScores, mergePlayerScore, publishActiveRound, deleteActiveRound, removeParticipant, sendPushToFriends, getActiveRound } from '../supabase.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
 
@@ -10,6 +10,12 @@ export async function render(container, params) {
   if (!draft) {
     container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
     return;
+  }
+  if (draft.cloudRoundId) {
+    try {
+      const live = await getActiveRound(draft.cloudRoundId);
+      live.players.forEach(p => { draft.scores[p.id] = p.scores; });
+    } catch (e) { /* fallback auf lokale Daten */ }
   }
 
   const course = { name: draft.courseName, holes: draft.holes };
@@ -58,7 +64,7 @@ export async function render(container, params) {
       const removeBtn = roundPlayers.length > 1
         ? `<button data-remove-player="${p.id}" style="margin-left:6px;padding:1px 6px;min-height:unset;font-size:12px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;">×</button>`
         : '';
-      return `<tr><th style="text-align:left;padding-left:8px"><span style="display:inline-flex;align-items:center;">${p.name}${removeBtn}</span></th>${cells}<td class="row-total">${draft.scores[p.id].some(v => v != null) ? totalFor(p.id) : '—'}</td><td class="row-total">${draft.scores[p.id].every(v => v == null) ? '—' : vsParStr}</td></tr>`;
+      return `<tr><th style="text-align:left;padding-left:8px"><span style="display:inline-flex;align-items:center;">${p.name}${removeBtn}</span></th>${cells}<td class="row-total" data-total="${p.id}">${draft.scores[p.id].some(v => v != null) ? totalFor(p.id) : '—'}</td><td class="row-total" data-vspar="${p.id}">${draft.scores[p.id].every(v => v == null) ? '—' : vsParStr}</td></tr>`;
     }).join('');
 
     container.innerHTML = `
@@ -107,7 +113,7 @@ export async function render(container, params) {
         if (navigator.onLine) {
           draft = await getDraft(draftId);
           if (draft.cloudRoundId) {
-            syncParticipantScores(draft.cloudRoundId, playerId, draft.scores[playerId])
+            mergePlayerScore(draft.cloudRoundId, playerId, holeIndex, stored)
               .catch(e => console.warn('sync failed:', e));
           }
         } else {
@@ -138,6 +144,30 @@ export async function render(container, params) {
   }
 
   draw();
+
+  if (draft.cloudRoundId) {
+    const liveInterval = setInterval(async () => {
+      if (!document.body.contains(container)) { clearInterval(liveInterval); return; }
+      try {
+        const live = await getActiveRound(draft.cloudRoundId);
+        live.players.forEach(p => {
+          draft.scores[p.id] = p.scores;
+          p.scores.forEach((score, i) => {
+            const cell = container.querySelector(`[data-pid="${p.id}"][data-hole="${i}"]`);
+            if (cell) cell.innerHTML = scoreCellHTML(score, course.holes[i].par);
+          });
+          const totalEl = container.querySelector(`[data-total="${p.id}"]`);
+          const vsParEl = container.querySelector(`[data-vspar="${p.id}"]`);
+          if (totalEl) totalEl.textContent = p.scores.some(v => v != null) ? p.scores.reduce((s, v) => v != null ? s + v : s, 0) : '—';
+          if (vsParEl) {
+            let diff = 0;
+            p.scores.forEach((s, i) => { if (s != null) diff += s - course.holes[i].par; });
+            vsParEl.textContent = p.scores.every(v => v == null) ? '—' : (diff > 0 ? `+${diff}` : `${diff}`);
+          }
+        });
+      } catch (e) {}
+    }, 5000);
+  }
 
   const shareBtn = document.createElement('button');
   shareBtn.className = 'btn-primary';

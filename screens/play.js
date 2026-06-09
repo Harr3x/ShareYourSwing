@@ -1,5 +1,5 @@
 import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync } from '../db.js';
-import { createActiveRound, syncParticipantScores, syncOtherParticipantScore, getActiveRound, getCurrentUser, getCloudRoundsForPlayers } from '../supabase.js';
+import { createActiveRound, syncParticipantScores, mergePlayerScore, getActiveRound, getCurrentUser, getCloudRoundsForPlayers, supabase } from '../supabase.js';
 import { getScoreClass, getScoreLabel, computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 import { haversineMeters } from '../utils/geo.js';
@@ -76,6 +76,7 @@ export async function render(container, params) {
   let mapCircle = null;
 
   let pollInterval = null;
+  let realtimeChannel = null;
 
   const flagIcon = L.divIcon({
     className: '',
@@ -391,7 +392,7 @@ export async function render(container, params) {
         );
         await setCloudRoundId(draftId, cloudId);
         draft = await getDraft(draftId);
-        if (!pollInterval) startPolling();
+        if (!pollInterval) { startPolling(); startRealtime(); }
       } catch (e) {
         console.warn('createActiveRound failed:', e);
         return;
@@ -400,22 +401,34 @@ export async function render(container, params) {
 
     try {
       const myId = currentUser?.id;
+
+      // Refresh cloud cache before syncing to reduce overwrite risk
+      if (myId && draft.cloudRoundId) {
+        try {
+          const fresh = await getActiveRound(draft.cloudRoundId);
+          fresh.players.forEach(fp => { cloudRoundScoreCache[fp.id] = [...fp.scores]; });
+        } catch (e) { /* use stale cache */ }
+      }
+
       await Promise.all(
         draft.playerIds.map(pid => {
-          if (pid === myId) {
-            return syncParticipantScores(draft.cloudRoundId, pid, draft.scores[pid]);
-          }
-          // Other players: only fill null slots using last-known cloud state
-          const knownScores = cloudRoundScoreCache[pid] ?? Array(18).fill(null);
           const localScores = draft.scores[pid];
-          const nonNullMoves = localScores
-            .map((score, i) => ({ score, i }))
-            .filter(({ score }) => score != null);
-          return Promise.all(
-            nonNullMoves.map(({ score, i }) =>
-              syncOtherParticipantScore(draft.cloudRoundId, pid, i, score, knownScores)
-            )
-          );
+          if (pid === myId) {
+            return syncParticipantScores(draft.cloudRoundId, pid, localScores);
+          }
+          // Merge local scores into cloud cache, then atomic per-cell writes
+          const merged = [...(cloudRoundScoreCache[pid] ?? Array(18).fill(null))];
+          for (let i = 0; i < 18; i++) {
+            if (localScores[i] != null) merged[i] = localScores[i];
+          }
+          cloudRoundScoreCache[pid] = merged;
+          const writes = [];
+          for (let i = 0; i < 18; i++) {
+            if (merged[i] != null) {
+              writes.push(mergePlayerScore(draft.cloudRoundId, pid, i, merged[i]));
+            }
+          }
+          return Promise.all(writes);
         })
       );
       await setPendingSync(draftId, false);
@@ -436,31 +449,25 @@ export async function render(container, params) {
       if (!myId) {
         console.warn('advance: no currentUser in join mode');
       }
+
+      // Refresh cloud cache before writing to minimize overwrite risk
+      try {
+        const fresh = await getActiveRound(cloudRoundId);
+        fresh.players.forEach(fp => { cloudRoundScoreCache[fp.id] = [...fp.scores]; });
+      } catch (e) { /* use stale cache */ }
+
       await Promise.all(roundPlayers.map(async p => {
         const score = currentScores[p.id];
         if (score == null) return;
         draft.scores[p.id][holeIndex] = score;
-        if (p.id === myId) {
-          try {
-            const knownScores = cloudRoundScoreCache[p.id] ?? Array(18).fill(null);
-            const merged = [...knownScores];
-            merged[holeIndex] = score;
-            cloudRoundScoreCache[p.id] = merged;
-            await syncParticipantScores(cloudRoundId, p.id, merged);
-          } catch (e) {
-            console.warn('sync own score failed:', e);
-          }
-        } else {
-          const knownScores = cloudRoundScoreCache[p.id] ?? Array(18).fill(null);
-          if (knownScores[holeIndex] == null) {
-            knownScores[holeIndex] = score;
-            cloudRoundScoreCache[p.id] = knownScores;
-            try {
-              await syncParticipantScores(cloudRoundId, p.id, knownScores);
-            } catch (e) {
-              console.warn('sync other score failed:', e);
-            }
-          }
+        const playerId = p.id;
+        const merged = [...(cloudRoundScoreCache[playerId] ?? Array(18).fill(null))];
+        merged[holeIndex] = score;
+        cloudRoundScoreCache[playerId] = merged;
+        try {
+          await mergePlayerScore(cloudRoundId, playerId, holeIndex, score);
+        } catch (e) {
+          console.warn('sync score failed:', e);
         }
       }));
 
@@ -529,6 +536,70 @@ export async function render(container, params) {
     setTimeout(initMap, 50);
   }
 
+  // ── Realtime subscription ─────────────────────────────────────
+
+  function applyRemoteUpdate(playerId, scores) {
+    const myId = currentUser?.id;
+    const par = draft.holes[holeIndex].par;
+
+    cloudRoundScoreCache[playerId] = [...scores];
+
+    draft.scores[playerId] = [...scores];
+    if (playerId === myId && currentScores[playerId] != null) {
+      draft.scores[playerId][holeIndex] = currentScores[playerId];
+    } else {
+      currentScores[playerId] = scores[holeIndex] ?? null;
+    }
+
+    const badge = container.querySelector(`[data-badge="${playerId}"]`);
+    const labelEl = container.querySelector(`[data-label="${playerId}"]`);
+    const chipEl = container.querySelector(`[data-chip="${playerId}"]`);
+    if (badge) {
+      const score = currentScores[playerId];
+      const { cls, display, label } = scoreBadgeContent(score, par);
+      badge.className = cls;
+      badge.textContent = display;
+      if (labelEl) labelEl.textContent = label;
+    }
+    if (chipEl) {
+      const diff = vsParSoFar(playerId);
+      if (diff !== null) {
+        const isOver = diff > (hcpMap[playerId] ?? 36);
+        const label = diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`;
+        chipEl.textContent = label;
+        chipEl.style.cssText = isOver
+          ? 'background:#fdf0ee;border:1px solid #e8b4ae;color:#c0392b;'
+          : 'background:var(--surface-2);border:1px solid var(--border);color:var(--text);';
+        chipEl.style.cssText += 'border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;';
+      }
+    }
+  }
+
+  function startRealtime() {
+    const roundId = isJoinMode ? cloudRoundId : draft.cloudRoundId;
+    if (!roundId || realtimeChannel) return;
+    const channelName = `round-participants-${roundId}`;
+    supabase.getChannels().filter(c => c.topic === `realtime:${channelName}`).forEach(c => supabase.removeChannel(c));
+    realtimeChannel = supabase
+      .channel(channelName)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'round_participants', filter: `round_id=eq.${roundId}` },
+        (payload) => {
+          if (!document.body.contains(container)) { stopRealtime(); return; }
+          const { user_id, scores } = payload.new;
+          if (user_id && scores) applyRemoteUpdate(user_id, scores);
+        }
+      )
+      .subscribe();
+  }
+
+  function stopRealtime() {
+    if (realtimeChannel) {
+      supabase.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
+  }
+
   // ── Polling ──────────────────────────────────────────────────
 
   function startPolling() {
@@ -541,45 +612,9 @@ export async function render(container, params) {
       }
       try {
         const fresh = await getActiveRound(roundId);
-        const myId = currentUser?.id;
-        const par = draft.holes[holeIndex].par;
-        fresh.players.forEach(p => {
-          cloudRoundScoreCache[p.id] = [...p.scores];
-          if (p.id !== myId) {
-            draft.scores[p.id] = p.scores.map((s, i) =>
-              currentScores[p.id] != null && i === holeIndex ? currentScores[p.id] : s
-            );
-            if (currentScores[p.id] == null) {
-              currentScores[p.id] = draft.scores[p.id][holeIndex];
-            }
-          }
-          // Direct DOM update — avoids innerHTML flicker
-          const badge = container.querySelector(`[data-badge="${p.id}"]`);
-          const labelEl = container.querySelector(`[data-label="${p.id}"]`);
-          const chipEl = container.querySelector(`[data-chip="${p.id}"]`);
-          if (badge) {
-            const score = currentScores[p.id];
-            const { cls, display, label } = scoreBadgeContent(score, par);
-            badge.className = cls;
-            badge.textContent = display;
-            if (labelEl) labelEl.textContent = label;
-          }
-          // Update vs-par chip
-          if (chipEl) {
-            const diff = vsParSoFar(p.id);
-            if (diff !== null) {
-              const isOver = diff > (hcpMap[p.id] ?? 36);
-              const label = diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`;
-              chipEl.textContent = label;
-              chipEl.style.cssText = isOver
-                ? 'background:#fdf0ee;border:1px solid #e8b4ae;color:#c0392b;'
-                : 'background:var(--surface-2);border:1px solid var(--border);color:var(--text);';
-              chipEl.style.cssText += 'border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;';
-            }
-          }
-        });
+        fresh.players.forEach(p => applyRemoteUpdate(p.id, p.scores));
       } catch (e) { console.warn('polling: fetch failed', e); }
-    }, 30000);
+    }, 3000);
   }
 
   // ── Init ─────────────────────────────────────────────────────
@@ -590,6 +625,7 @@ export async function render(container, params) {
   draw();
   setTimeout(initMap, 50);
   startPolling();
+  startRealtime();
   startGpsWatch();
 
   const stopOnLeave = () => {
@@ -597,6 +633,7 @@ export async function render(container, params) {
       stopGpsWatch();
       destroyMap();
       if (pollInterval) clearInterval(pollInterval);
+      stopRealtime();
       document.removeEventListener('click', stopOnLeave);
     }
   };

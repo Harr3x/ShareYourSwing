@@ -329,6 +329,19 @@ export async function syncParticipantScores(cloudRoundId, userId, scores) {
   if (error) throw error;
 }
 
+// Atomic per-cell score write — safe for concurrent clients.
+// Only touches one array slot, so multiple clients can update
+// different holes of the same player without overwriting each other.
+export async function mergePlayerScore(cloudRoundId, userId, holeIndex, score) {
+  const { error } = await supabase.rpc('merge_player_score', {
+    p_round_id: cloudRoundId,
+    p_user_id: userId,
+    p_hole_index: holeIndex,
+    p_score: score,
+  });
+  if (error) throw error;
+}
+
 export async function getActiveRound(cloudRoundId) {
   const { data, error } = await supabase
     .from('cloud_rounds')
