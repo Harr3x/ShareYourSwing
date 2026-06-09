@@ -433,18 +433,29 @@ export async function render(container, params) {
 
     if (isJoinMode) {
       const myId = currentUser?.id;
+      if (!myId) {
+        console.warn('advance: no currentUser in join mode');
+      }
       await Promise.all(roundPlayers.map(async p => {
         const score = currentScores[p.id];
         if (score == null) return;
         draft.scores[p.id][holeIndex] = score;
         if (p.id === myId) {
-          await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
-        } else {
+          try {
+            await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+          } catch (e) {
+            console.warn('sync own score failed:', e);
+          }
+        } else if (isCreator) {
           const knownScores = cloudRoundScoreCache[p.id] ?? Array(18).fill(null);
           if (knownScores[holeIndex] == null) {
             knownScores[holeIndex] = score;
             cloudRoundScoreCache[p.id] = knownScores;
-            await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+            try {
+              await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+            } catch (e) {
+              console.warn('sync other score failed:', e);
+            }
           }
         }
       }));
