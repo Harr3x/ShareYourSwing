@@ -442,17 +442,21 @@ export async function render(container, params) {
         draft.scores[p.id][holeIndex] = score;
         if (p.id === myId) {
           try {
-            await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+            const knownScores = cloudRoundScoreCache[p.id] ?? Array(18).fill(null);
+            const merged = [...knownScores];
+            merged[holeIndex] = score;
+            cloudRoundScoreCache[p.id] = merged;
+            await syncParticipantScores(cloudRoundId, p.id, merged);
           } catch (e) {
             console.warn('sync own score failed:', e);
           }
-        } else if (isCreator) {
+        } else {
           const knownScores = cloudRoundScoreCache[p.id] ?? Array(18).fill(null);
           if (knownScores[holeIndex] == null) {
             knownScores[holeIndex] = score;
             cloudRoundScoreCache[p.id] = knownScores;
             try {
-              await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+              await syncParticipantScores(cloudRoundId, p.id, knownScores);
             } catch (e) {
               console.warn('sync other score failed:', e);
             }
