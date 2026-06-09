@@ -533,15 +533,18 @@ export async function render(container, params) {
 
   function startPolling() {
     const roundId = isJoinMode ? cloudRoundId : draft.cloudRoundId;
-    if (!roundId) return;
+    if (!roundId) { console.warn('polling: no roundId (cloudRoundId missing)'); return; }
+    console.log('polling: started for round', roundId);
     pollInterval = setInterval(async () => {
       if (!document.body.contains(container)) {
+        console.log('polling: container gone, stopping');
         clearInterval(pollInterval);
         return;
       }
       try {
         const fresh = await getActiveRound(roundId);
         const myId = currentUser?.id;
+        console.log('polling: got data, players:', fresh.players.map(p => ({ id: p.id, scores: p.scores })));
         fresh.players.forEach(p => {
           cloudRoundScoreCache[p.id] = [...p.scores];
           if (p.id !== myId) {
@@ -558,7 +561,7 @@ export async function render(container, params) {
         // Re-render player cards only (avoid full redraw which resets map)
         const cardsEl = container.querySelector('#player-cards');
         if (cardsEl) cardsEl.innerHTML = roundPlayers.map(p => playerCardHTML(p)).join('');
-      } catch (e) { /* polling failure is non-critical */ }
+      } catch (e) { console.warn('polling: fetch failed', e); }
     }, 30000);
   }
 
