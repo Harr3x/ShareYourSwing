@@ -1,5 +1,5 @@
 import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync } from '../db.js';
-import { createActiveRound, syncParticipantScores, getCloudRoundsForPlayers } from '../supabase.js';
+import { createActiveRound, syncParticipantScores, syncOtherParticipantScore, getActiveRound, getCurrentUser, getCloudRoundsForPlayers } from '../supabase.js';
 import { getScoreClass, getScoreLabel, computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 import { haversineMeters } from '../utils/geo.js';
@@ -15,6 +15,9 @@ function escapeHTML(str) {
 export async function render(container, params) {
   const { draftId } = params;
   let holeIndex = parseInt(params.hole ?? '0', 10);
+  let currentUser = null;
+  try { currentUser = await getCurrentUser(); } catch (e) {}
+  let cloudRoundScoreCache = {}; // pid -> scores[], updated by polling
 
   let draft = await getDraft(draftId);
   if (!draft) {
@@ -360,10 +363,24 @@ export async function render(container, params) {
     }
 
     try {
+      const myId = currentUser?.id;
       await Promise.all(
-        draft.playerIds.map(pid =>
-          syncParticipantScores(draft.cloudRoundId, pid, draft.scores[pid])
-        )
+        draft.playerIds.map(pid => {
+          if (pid === myId) {
+            return syncParticipantScores(draft.cloudRoundId, pid, draft.scores[pid]);
+          }
+          // Other players: only fill null slots using last-known cloud state
+          const knownScores = cloudRoundScoreCache[pid] ?? Array(18).fill(null);
+          const localScores = draft.scores[pid];
+          const nonNullMoves = localScores
+            .map((score, i) => ({ score, i }))
+            .filter(({ score }) => score != null);
+          return Promise.all(
+            nonNullMoves.map(({ score, i }) =>
+              syncOtherParticipantScore(draft.cloudRoundId, pid, i, score, knownScores)
+            )
+          );
+        })
       );
       await setPendingSync(draftId, false);
       draft = await getDraft(draftId);
