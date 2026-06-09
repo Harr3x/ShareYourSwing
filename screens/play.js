@@ -544,7 +544,7 @@ export async function render(container, params) {
       try {
         const fresh = await getActiveRound(roundId);
         const myId = currentUser?.id;
-        console.log('polling: got data, players:', fresh.players.map(p => ({ id: p.id, scores: p.scores })));
+        console.log('polling: round data', fresh);
         fresh.players.forEach(p => {
           cloudRoundScoreCache[p.id] = [...p.scores];
           if (p.id !== myId) {
@@ -560,7 +560,9 @@ export async function render(container, params) {
         });
         // Re-render player cards only (avoid full redraw which resets map)
         const cardsEl = container.querySelector('#player-cards');
-        if (cardsEl) cardsEl.innerHTML = roundPlayers.map(p => playerCardHTML(p)).join('');
+        if (!cardsEl) { console.warn('polling: #player-cards not found'); return; }
+        console.log('polling: currentScores before render', JSON.parse(JSON.stringify(currentScores)), 'holeIndex', holeIndex, 'myId', myId);
+        cardsEl.innerHTML = roundPlayers.map(p => playerCardHTML(p)).join('');
       } catch (e) { console.warn('polling: fetch failed', e); }
     }, 30000);
   }
