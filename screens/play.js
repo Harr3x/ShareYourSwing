@@ -75,6 +75,8 @@ export async function render(container, params) {
   let mapMarker = null;
   let mapCircle = null;
 
+  let pollInterval = null;
+
   const flagIcon = L.divIcon({
     className: '',
     html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34" width="24" height="34"><circle cx="8" cy="5" r="2.5" fill="#555"/><line x1="8" y1="7" x2="8" y2="34" stroke="#555" stroke-width="2.5" stroke-linecap="round"/><path d="M8 7 L22 11 L8 15 Z" fill="#e53935"/></svg>`,
@@ -389,6 +391,7 @@ export async function render(container, params) {
         );
         await setCloudRoundId(draftId, cloudId);
         draft = await getDraft(draftId);
+        if (!pollInterval) startPolling();
       } catch (e) {
         console.warn('createActiveRound failed:', e);
         return;
@@ -511,6 +514,35 @@ export async function render(container, params) {
     setTimeout(initMap, 50);
   }
 
+  // ── Polling ──────────────────────────────────────────────────
+
+  function startPolling() {
+    const roundId = isJoinMode ? cloudRoundId : draft.cloudRoundId;
+    if (!roundId) return;
+    pollInterval = setInterval(async () => {
+      if (!document.body.contains(container)) {
+        clearInterval(pollInterval);
+        return;
+      }
+      try {
+        const fresh = await getActiveRound(roundId);
+        const myId = currentUser?.id;
+        fresh.players.forEach(p => {
+          cloudRoundScoreCache[p.id] = [...p.scores];
+          if (p.id !== myId) {
+            // Update other players' scores — preserve current player's in-progress score for current hole
+            draft.scores[p.id] = p.scores.map((s, i) =>
+              currentScores[p.id] != null && i === holeIndex ? currentScores[p.id] : s
+            );
+          }
+        });
+        // Re-render player cards only (avoid full redraw which resets map)
+        const cardsEl = container.querySelector('#player-cards');
+        if (cardsEl) cardsEl.innerHTML = roundPlayers.map(p => playerCardHTML(p)).join('');
+      } catch (e) { /* polling failure is non-critical */ }
+    }, 30000);
+  }
+
   // ── Init ─────────────────────────────────────────────────────
 
   container.dataset.playSession = draftId ?? cloudRoundId;
@@ -518,12 +550,14 @@ export async function render(container, params) {
   initScores();
   draw();
   setTimeout(initMap, 50);
+  startPolling();
   startGpsWatch();
 
   const stopOnLeave = () => {
     if (!document.body.contains(container)) {
       stopGpsWatch();
       destroyMap();
+      if (pollInterval) clearInterval(pollInterval);
       document.removeEventListener('click', stopOnLeave);
     }
   };
