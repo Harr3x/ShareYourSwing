@@ -236,7 +236,7 @@ export async function render(container, params) {
     const style = isOver
       ? 'background:#fdf0ee;border:1px solid #e8b4ae;color:#c0392b;'
       : 'background:var(--surface-2);border:1px solid var(--border);color:var(--text);';
-    return `<span style="border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;${style}">${label}</span>`;
+    return `<span data-chip="${pid}" style="border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;${style}">${label}</span>`;
   }
 
   function scoreBadgeContent(score, par) {
@@ -533,36 +533,51 @@ export async function render(container, params) {
 
   function startPolling() {
     const roundId = isJoinMode ? cloudRoundId : draft.cloudRoundId;
-    if (!roundId) { console.warn('polling: no roundId (cloudRoundId missing)'); return; }
-    console.log('polling: started for round', roundId);
+    if (!roundId) return;
     pollInterval = setInterval(async () => {
       if (!document.body.contains(container)) {
-        console.log('polling: container gone, stopping');
         clearInterval(pollInterval);
         return;
       }
       try {
         const fresh = await getActiveRound(roundId);
         const myId = currentUser?.id;
-        console.log('polling: round data', fresh);
+        const par = draft.holes[holeIndex].par;
         fresh.players.forEach(p => {
           cloudRoundScoreCache[p.id] = [...p.scores];
           if (p.id !== myId) {
-            // Update other players' scores — preserve current player's in-progress score for current hole
             draft.scores[p.id] = p.scores.map((s, i) =>
               currentScores[p.id] != null && i === holeIndex ? currentScores[p.id] : s
             );
-            // Sync currentScores for this hole so playerCardHTML shows the updated value
             if (currentScores[p.id] == null) {
               currentScores[p.id] = draft.scores[p.id][holeIndex];
             }
           }
+          // Direct DOM update — avoids innerHTML flicker
+          const badge = container.querySelector(`[data-badge="${p.id}"]`);
+          const labelEl = container.querySelector(`[data-label="${p.id}"]`);
+          const chipEl = container.querySelector(`[data-chip="${p.id}"]`);
+          if (badge) {
+            const score = currentScores[p.id];
+            const { cls, display, label } = scoreBadgeContent(score, par);
+            badge.className = cls;
+            badge.textContent = display;
+            if (labelEl) labelEl.textContent = label;
+          }
+          // Update vs-par chip
+          if (chipEl) {
+            const diff = vsParSoFar(p.id);
+            if (diff !== null) {
+              const isOver = diff > (hcpMap[p.id] ?? 36);
+              const label = diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`;
+              chipEl.textContent = label;
+              chipEl.style.cssText = isOver
+                ? 'background:#fdf0ee;border:1px solid #e8b4ae;color:#c0392b;'
+                : 'background:var(--surface-2);border:1px solid var(--border);color:var(--text);';
+              chipEl.style.cssText += 'border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;';
+            }
+          }
         });
-        // Re-render player cards only (avoid full redraw which resets map)
-        const cardsEl = container.querySelector('#player-cards');
-        if (!cardsEl) { console.warn('polling: #player-cards not found'); return; }
-        console.log('polling: currentScores before render', JSON.parse(JSON.stringify(currentScores)), 'draft.scores', JSON.parse(JSON.stringify(Object.fromEntries(draft.playerIds.map(id => [id, draft.scores[id]])))), 'roundPlayers', roundPlayers.map(p => p.id), 'holeIndex', holeIndex, 'myId', myId);
-        cardsEl.innerHTML = roundPlayers.map(p => playerCardHTML(p)).join('');
       } catch (e) { console.warn('polling: fetch failed', e); }
     }, 30000);
   }
