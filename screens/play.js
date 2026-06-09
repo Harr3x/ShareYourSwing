@@ -545,6 +545,10 @@ export async function render(container, params) {
             draft.scores[p.id] = p.scores.map((s, i) =>
               currentScores[p.id] != null && i === holeIndex ? currentScores[p.id] : s
             );
+            // Sync currentScores for this hole so playerCardHTML shows the updated value
+            if (currentScores[p.id] == null) {
+              currentScores[p.id] = draft.scores[p.id][holeIndex];
+            }
           }
         });
         // Re-render player cards only (avoid full redraw which resets map)
