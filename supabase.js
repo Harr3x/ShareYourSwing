@@ -287,13 +287,14 @@ export async function getMyRounds() {
   if (error) throw error;
   return (data || [])
     .map(p => ({ ...p.cloud_rounds, myScores: p.scores }))
-    .filter(r => r.status === 'published')
+    .filter(r => r.status === 'published' || r.status === 'active')
     .sort((a, b) => b.date.localeCompare(a.date))
     .map(r => ({
       id: r.id,
       courseName: r.course_name,
       date: r.date,
       holes: r.holes,
+      status: r.status,
       players: (r.round_participants || []).map(rp => rp.display_name),
       myScores: r.myScores,
     }));
@@ -323,6 +324,44 @@ export async function syncParticipantScores(cloudRoundId, userId, scores) {
   const { error } = await supabase
     .from('round_participants')
     .update({ scores })
+    .eq('round_id', cloudRoundId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+export async function getActiveRound(cloudRoundId) {
+  const { data, error } = await supabase
+    .from('cloud_rounds')
+    .select(`
+      id, course_name, holes, date, status, created_by,
+      round_participants(user_id, display_name, scores)
+    `)
+    .eq('id', cloudRoundId)
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    courseName: data.course_name,
+    holes: data.holes,
+    date: data.date,
+    createdBy: data.created_by,
+    players: (data.round_participants || []).map(p => ({
+      id: p.user_id,
+      name: p.display_name,
+      scores: p.scores || Array(18).fill(null),
+    })),
+  };
+}
+
+// Writes a single score for another player's row only if that hole is still null in the cloud.
+// knownScores: the 18-element array last fetched for this player (used to check before writing).
+export async function syncOtherParticipantScore(cloudRoundId, userId, holeIndex, score, knownScores) {
+  if (knownScores[holeIndex] != null) return;
+  const merged = [...knownScores];
+  merged[holeIndex] = score;
+  const { error } = await supabase
+    .from('round_participants')
+    .update({ scores: merged })
     .eq('round_id', cloudRoundId)
     .eq('user_id', userId);
   if (error) throw error;
