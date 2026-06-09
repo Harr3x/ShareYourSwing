@@ -13,16 +13,43 @@ function escapeHTML(str) {
 }
 
 export async function render(container, params) {
-  const { draftId } = params;
+  const draftId = params.draftId || null;
+  const cloudRoundId = params.cloudRoundId || null;
+  const isJoinMode = !!cloudRoundId;
   let holeIndex = parseInt(params.hole ?? '0', 10);
+
   let currentUser = null;
   try { currentUser = await getCurrentUser(); } catch (e) {}
-  let cloudRoundScoreCache = {}; // pid -> scores[], updated by polling
+  let cloudRoundScoreCache = {};
 
-  let draft = await getDraft(draftId);
-  if (!draft) {
-    container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
-    return;
+  let draft;
+  let isCreator = true;
+
+  if (isJoinMode) {
+    let cloudRound;
+    try {
+      cloudRound = await getActiveRound(cloudRoundId);
+    } catch (e) {
+      container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
+      return;
+    }
+    isCreator = cloudRound.createdBy === currentUser?.id;
+    // Build virtual draft — same shape as IndexedDB draft so all helpers work unchanged
+    draft = {
+      holes: cloudRound.holes,
+      playerIds: cloudRound.players.map(p => p.id),
+      playerNames: Object.fromEntries(cloudRound.players.map(p => [p.id, p.name])),
+      scores: Object.fromEntries(cloudRound.players.map(p => [p.id, [...p.scores]])),
+      cloudRoundId,
+    };
+    // Seed cache with loaded scores
+    cloudRound.players.forEach(p => { cloudRoundScoreCache[p.id] = [...p.scores]; });
+  } else {
+    draft = await getDraft(draftId);
+    if (!draft) {
+      container.innerHTML = '<p style="padding:20px">Runde nicht gefunden.</p>';
+      return;
+    }
   }
 
   const roundPlayers = draft.playerIds.map(id => ({ id, name: draft.playerNames[id] || id }));
@@ -167,7 +194,11 @@ export async function render(container, params) {
   }
 
   function updateHash() {
-    history.replaceState(null, '', `#play?draftId=${draftId}&hole=${holeIndex}`);
+    if (isJoinMode) {
+      history.replaceState(null, '', `#play?cloudRoundId=${cloudRoundId}&hole=${holeIndex}`);
+    } else {
+      history.replaceState(null, '', `#play?draftId=${draftId}&hole=${holeIndex}`);
+    }
   }
 
   function holeStatus(i) {
@@ -242,7 +273,7 @@ export async function render(container, params) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px;">
         <button id="btn-back" class="btn-ghost" style="padding:0 12px;font-size:14px;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">${icons.chevronLeft} Zurück</button>
         <div class="hole-progress">${progressDots()}</div>
-        <a href="#scorecard?draftId=${draftId}&fromHole=${holeIndex}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>
+        ${!isJoinMode ? `<a href="#scorecard?draftId=${draftId}&fromHole=${holeIndex}" style="color:var(--text-muted);display:flex;align-items:center;text-decoration:none;padding:6px;flex-shrink:0;" title="Scorecard">${icons.scorecard}</a>` : '<span style="width:30px;flex-shrink:0;"></span>'}
       </div>
 
       <button id="btn-hole-overview" style="width:100%;background:none;border:none;border-radius:var(--radius);padding:8px 16px 16px;min-height:unset;text-align:center;cursor:pointer;transition:background 0.15s ease;" title="Bahn wählen">
@@ -262,7 +293,9 @@ export async function render(container, params) {
       </div>
 
       <button id="btn-confirm" class="btn-primary" style="margin-top:8px;">
-        ${isLast ? 'Runde beenden' : `Nächste Bahn ${icons.chevronRight}`}
+        ${isLast
+          ? (isJoinMode && !isCreator ? 'Fertig' : 'Runde beenden')
+          : `Nächste Bahn ${icons.chevronRight}`}
       </button>
     `;
   }
@@ -395,30 +428,62 @@ export async function render(container, params) {
     const btn = container.querySelector('#btn-confirm');
     if (btn) btn.disabled = true;
 
-    await Promise.all(
-      roundPlayers.map(async p => {
-        const val = currentScores[p.id] === 0 ? null : currentScores[p.id];
-        draft.scores[p.id][holeIndex] = val;
-        await saveDraftScore(draftId, p.id, holeIndex, val);
-      })
-    );
+    if (isJoinMode) {
+      const myId = currentUser?.id;
+      await Promise.all(roundPlayers.map(async p => {
+        const score = currentScores[p.id];
+        if (score == null) return;
+        draft.scores[p.id][holeIndex] = score;
+        if (p.id === myId) {
+          await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+        } else {
+          const knownScores = cloudRoundScoreCache[p.id] ?? Array(18).fill(null);
+          if (knownScores[holeIndex] == null) {
+            knownScores[holeIndex] = score;
+            cloudRoundScoreCache[p.id] = knownScores;
+            await syncParticipantScores(cloudRoundId, p.id, draft.scores[p.id]);
+          }
+        }
+      }));
 
-    if (navigator.onLine) {
-      await syncToCloud();
+      if (holeIndex < draft.holes.length - 1) {
+        holeIndex++;
+        initScores();
+        updateHash();
+        destroyMap();
+        draw();
+        setTimeout(initMap, 50);
+      } else {
+        stopGpsWatch();
+        localStorage.removeItem('activeCloudRoundId');
+        location.hash = '#home';
+      }
     } else {
-      await setPendingSync(draftId, true);
-    }
+      await Promise.all(
+        roundPlayers.map(async p => {
+          const val = currentScores[p.id] === 0 ? null : currentScores[p.id];
+          draft.scores[p.id][holeIndex] = val;
+          await saveDraftScore(draftId, p.id, holeIndex, val);
+        })
+      );
 
-    if (holeIndex < 17) {
-      holeIndex++;
-      initScores();
-      updateHash();
-      destroyMap();
-      draw();
-      setTimeout(initMap, 50);
-    } else {
-      stopGpsWatch();
-      location.hash = `#scorecard?draftId=${draftId}`;
+      if (navigator.onLine) {
+        await syncToCloud();
+      } else {
+        await setPendingSync(draftId, true);
+      }
+
+      if (holeIndex < 17) {
+        holeIndex++;
+        initScores();
+        updateHash();
+        destroyMap();
+        draw();
+        setTimeout(initMap, 50);
+      } else {
+        stopGpsWatch();
+        location.hash = `#scorecard?draftId=${draftId}`;
+      }
     }
   }
 
@@ -448,7 +513,7 @@ export async function render(container, params) {
 
   // ── Init ─────────────────────────────────────────────────────
 
-  container.dataset.playSession = draftId;
+  container.dataset.playSession = draftId ?? cloudRoundId;
 
   initScores();
   draw();
@@ -474,7 +539,7 @@ export async function render(container, params) {
   });
 
   container.addEventListener('click', e => {
-    if (container.dataset.playSession !== draftId) return;
+    if (container.dataset.playSession !== (draftId ?? cloudRoundId)) return;
     if (e.target.closest('#btn-back')) { goBack(); return; }
     if (e.target.closest('#btn-confirm')) { advance(); return; }
     if (e.target.closest('#btn-hole-overview')) { showHoleOverview(); return; }
