@@ -564,7 +564,7 @@ export async function render(container, params) {
   });
 
   document.addEventListener('click', function onJump(e) {
-    if (container.dataset.playSession !== draftId) {
+    if (container.dataset.playSession !== (draftId ?? cloudRoundId)) {
       document.removeEventListener('click', onJump);
       return;
     }
