@@ -21,6 +21,8 @@ export async function render(container, params) {
   let currentUser = null;
   try { currentUser = await getCurrentUser(); } catch (e) {}
   let cloudRoundScoreCache = {};
+  const localEditTimestamps = new Map();
+  const EDIT_PROTECTION_MS = 20_000;
 
   let draft;
   let isCreator = true;
@@ -86,6 +88,7 @@ export async function render(container, params) {
   });
 
   function initScores() {
+    localEditTimestamps.clear();
     roundPlayers.forEach(p => {
       currentScores[p.id] = draft.scores[p.id][holeIndex] ?? null;
     });
@@ -545,7 +548,8 @@ export async function render(container, params) {
     cloudRoundScoreCache[playerId] = [...scores];
 
     draft.scores[playerId] = [...scores];
-    if (playerId === myId && currentScores[playerId] != null) {
+    const lastEdit = localEditTimestamps.get(playerId) ?? 0;
+    if (Date.now() - lastEdit < EDIT_PROTECTION_MS) {
       draft.scores[playerId][holeIndex] = currentScores[playerId];
     } else {
       currentScores[playerId] = scores[holeIndex] ?? null;
@@ -657,6 +661,7 @@ export async function render(container, params) {
     const minus = e.target.closest('[data-minus]');
     if (minus) {
       const pid = minus.dataset.minus;
+      localEditTimestamps.set(pid, Date.now());
       if (currentScores[pid] > 0) { currentScores[pid]--; updateScoreDisplay(pid); }
       return;
     }
@@ -668,6 +673,7 @@ export async function render(container, params) {
       } else {
         currentScores[pid]++;
       }
+      localEditTimestamps.set(pid, Date.now());
       updateScoreDisplay(pid);
       return;
     }
