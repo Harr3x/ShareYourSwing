@@ -454,7 +454,8 @@ export async function upsertPlayerStats(userId, data) {
   if (data.handicap !== undefined) row.handicap = data.handicap;
   if (data.birdieStats !== undefined) row.birdie_stats = data.birdieStats;
   if (data.courseRecords !== undefined) row.course_records = data.courseRecords;
-  await supabase.from('player_stats').upsert(row);
+  const { error } = await supabase.from('player_stats').upsert(row);
+  if (error) console.error('upsertPlayerStats failed:', error);
 }
 
 export async function getPlayerStats(playerIds) {
