@@ -1,4 +1,4 @@
-import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync } from '../db.js';
+import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync, getActiveDraft } from '../db.js';
 import { createActiveRound, syncParticipantScores, mergePlayerScore, getActiveRound, getCurrentUser, getCloudRoundsForPlayers, supabase } from '../supabase.js';
 import { getScoreClass, getScoreLabel, computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
@@ -26,6 +26,7 @@ export async function render(container, params) {
 
   let draft;
   let isCreator = true;
+  let roundComplete = false;
 
   if (isJoinMode) {
     let cloudRound;
@@ -272,6 +273,22 @@ export async function render(container, params) {
   }
 
   function draw() {
+    if (roundComplete) {
+      container.innerHTML = `
+        <div style="padding:32px 20px;text-align:center;">
+          <div style="font-size:48px;margin-bottom:16px;">⛳</div>
+          <h2 style="margin:0 0 8px">Runde beendet!</h2>
+          <p style="color:var(--text-muted);margin:0 0 24px">Du hast alle 18 Bahnen gespielt.</p>
+          <button id="btn-go-home" class="btn-primary" style="width:100%">Zum Home</button>
+        </div>
+      `;
+      container.querySelector('#btn-go-home').addEventListener('click', () => {
+        localStorage.removeItem('activeCloudRoundId');
+        location.hash = '#home';
+      });
+      return;
+    }
+
     const par = currentPar();
     const isLast = holeIndex === 17;
 
@@ -483,8 +500,18 @@ export async function render(container, params) {
         setTimeout(initMap, 50);
       } else {
         stopGpsWatch();
-        localStorage.removeItem('activeCloudRoundId');
-        location.hash = '#home';
+        if (isCreator) {
+          const activeDraft = await getActiveDraft();
+          if (activeDraft?.cloudRoundId === cloudRoundId) {
+            location.hash = `#scorecard?draftId=${activeDraft.id}&fromHole=${holeIndex}`;
+          } else {
+            localStorage.removeItem('activeCloudRoundId');
+            location.hash = '#home';
+          }
+        } else {
+          roundComplete = true;
+          draw();
+        }
       }
     } else {
       await Promise.all(
@@ -510,7 +537,7 @@ export async function render(container, params) {
         setTimeout(initMap, 50);
       } else {
         stopGpsWatch();
-        location.hash = `#scorecard?draftId=${draftId}`;
+        location.hash = `#scorecard?draftId=${draftId}&fromHole=${holeIndex}`;
       }
     }
   }
