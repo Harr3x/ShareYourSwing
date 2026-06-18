@@ -1,6 +1,6 @@
 import { computeHandicap, computeBirdieStats, computeCourseRecords } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
-import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers, getMyProfile, updateProfile, getPlayerStats } from '../supabase.js';
+import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers, getMyProfile, updateProfile, getPlayerStats, upsertPlayerStats } from '../supabase.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -42,6 +42,17 @@ export async function render(container) {
     getCloudRoundsForPlayers(allPlayerIds),
     getPlayerStats(allPlayerIds),
   ]);
+
+  if (currentUser) {
+    const myHcp = computeHandicap(rounds, courseMap, currentUser.id).handicap;
+    if (myHcp != null) {
+      upsertPlayerStats(currentUser.id, {
+        handicap: myHcp,
+        birdieStats: computeBirdieStats(rounds, courseMap, currentUser.id),
+        courseRecords: computeCourseRecords(rounds, courseMap, currentUser.id),
+      });
+    }
+  }
 
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
