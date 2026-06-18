@@ -449,16 +449,18 @@ export async function sendPushToFriends(courseName) {
   }
 }
 
-export async function upsertPlayerHandicap(userId, handicap) {
-  await supabase
-    .from('player_stats')
-    .upsert({ user_id: userId, handicap, updated_at: new Date().toISOString() });
+export async function upsertPlayerStats(userId, data) {
+  const row = { user_id: userId, updated_at: new Date().toISOString() };
+  if (data.handicap !== undefined) row.handicap = data.handicap;
+  if (data.birdieStats !== undefined) row.birdie_stats = data.birdieStats;
+  if (data.courseRecords !== undefined) row.course_records = data.courseRecords;
+  await supabase.from('player_stats').upsert(row);
 }
 
 export async function getPlayerStats(playerIds) {
   const { data } = await supabase
     .from('player_stats')
-    .select('user_id, handicap')
+    .select('user_id, handicap, birdie_stats, course_records')
     .in('user_id', playerIds);
   return new Map((data || []).map(r => [r.user_id, r]));
 }

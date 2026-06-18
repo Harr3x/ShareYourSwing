@@ -1,3 +1,4 @@
+import { computeHandicap, computeBirdieStats, computeCourseRecords } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
 import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers, getMyProfile, updateProfile, getPlayerStats } from '../supabase.js';
 
@@ -13,50 +14,6 @@ const iconBirdie    = `<svg width="10" height="10" viewBox="0 0 10 10" fill="non
 const iconEagle     = `<svg width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="5" r="4"/><circle cx="11" cy="5" r="4"/></svg>`;
 const iconFlag      = `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="1" x2="2" y2="11"/><path d="M2 1l6 2.5-6 2.5"/></svg>`;
 const iconHoleInOne = `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.34 4.13H12L8.33 6.69l1.34 4.12L6 8.25l-3.67 2.56 1.34-4.12L0 4.13h4.66z"/></svg>`;
-
-function computeBirdieStats(rounds, courseMap, playerId) {
-  let birdies = 0, eagles = 0, holesInOne = 0;
-  for (const r of rounds) {
-    if (!r.playerIds.includes(playerId)) continue;
-    const course = courseMap.get(r.courseId);
-    if (!course) continue;
-    const scores = r.scores[playerId];
-    for (let i = 0; i < 18; i++) {
-      if (scores[i] == null) continue;
-      if (scores[i] === 1) { holesInOne++; continue; }
-      const diff = scores[i] - course.holes[i].par;
-      if (diff <= -2) eagles++;
-      else if (diff === -1) birdies++;
-    }
-  }
-  return { birdies, eagles, holesInOne };
-}
-
-function computeCourseRecords(rounds, courseMap, playerId) {
-  // Group by course name — courseId = cloud_rounds.id (unique per round, not per course)
-  const byCourse = new Map();
-  for (const r of rounds) {
-    const course = courseMap.get(r.courseId);
-    if (!course) continue;
-    if (!byCourse.has(course.name)) byCourse.set(course.name, { course, results: [] });
-    for (const pid of r.playerIds) {
-      const scores = r.scores[pid];
-      if (!scores || scores.some(s => s == null)) continue;
-      byCourse.get(course.name).results.push({ date: r.date, pid, total: scores.reduce((s, v) => s + v, 0) });
-    }
-  }
-
-  const records = [];
-  for (const { course, results } of byCourse.values()) {
-    results.sort((a, b) => a.date.localeCompare(b.date));
-    let recordScore = Infinity, recordHolder = null;
-    for (const { pid, total } of results) {
-      if (total < recordScore) { recordScore = total; recordHolder = pid; }
-    }
-    if (recordHolder === playerId) records.push({ name: course.name, score: recordScore });
-  }
-  return records;
-}
 
 function achievementChips(birdieStats, records) {
   const { birdies, eagles, holesInOne } = birdieStats;
@@ -150,8 +107,8 @@ export async function render(container) {
       list.innerHTML = '<p class="text-muted">Noch keine Spieler.</p>';
     } else {
       const sorted = [...allP].sort((a, b) => {
-        const ha = statsMap.get(a.id)?.handicap ?? null;
-        const hb = statsMap.get(b.id)?.handicap ?? null;
+        const ha = statsMap.get(a.id)?.handicap ?? computeHandicap(rounds, courseMap, a.id).handicap;
+        const hb = statsMap.get(b.id)?.handicap ?? computeHandicap(rounds, courseMap, b.id).handicap;
         if (ha == null && hb == null) return 0;
         if (ha == null) return 1;
         if (hb == null) return -1;
@@ -160,10 +117,11 @@ export async function render(container) {
 
       list.innerHTML = sorted.map(p => {
         const isMe = p.id === currentUser?.id;
-        const storedHcp = statsMap.get(p.id)?.handicap ?? null;
-        const birdieStats = computeBirdieStats(rounds, courseMap, p.id);
-        const records = computeCourseRecords(rounds, courseMap, p.id);
-        const chips = achievementChips(birdieStats, records);
+        const stored = statsMap.get(p.id);
+        const storedHcp = stored?.handicap ?? computeHandicap(rounds, courseMap, p.id).handicap;
+        const birdieStats = stored?.birdie_stats ?? computeBirdieStats(rounds, courseMap, p.id);
+        const courseRecords = stored?.course_records ?? computeCourseRecords(rounds, courseMap, p.id);
+        const chips = achievementChips(birdieStats, courseRecords);
         const friendshipId = friendMap.get(p.id) || '';
         return `
           <div class="card" style="align-items:flex-start;">

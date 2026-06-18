@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS public.player_stats (
   user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
   handicap NUMERIC(4,1),
+  birdie_stats JSONB,
+  course_records JSONB,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 

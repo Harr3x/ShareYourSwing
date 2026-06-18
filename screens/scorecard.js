@@ -1,5 +1,5 @@
 import { getDraft, saveDraftScore, deleteDraft, setCloudRoundId, setPendingSync, removePlayerFromDraft } from '../db.js';
-import { createActiveRound, syncParticipantScores, mergePlayerScore, publishActiveRound, deleteActiveRound, removeParticipant, sendPushToFriends, getActiveRound, getUserRounds, upsertPlayerHandicap, getCurrentUser } from '../supabase.js';
+import { createActiveRound, syncParticipantScores, mergePlayerScore, publishActiveRound, deleteActiveRound, removeParticipant, sendPushToFriends, getActiveRound, getUserRounds, upsertPlayerStats, getCurrentUser } from '../supabase.js';
 import { computeHandicap } from '../utils/golf.js';
 import { scoreCellHTML } from '../components/score-cell.js';
 import { icons } from '../components/icons.js';
@@ -206,7 +206,7 @@ export async function render(container, params) {
         if (!me) return;
         getUserRounds().then(({ rounds: myRounds, courseMap: myCourseMap }) => {
           const { handicap: newHcp } = computeHandicap(myRounds, myCourseMap, me.id);
-          if (newHcp != null) upsertPlayerHandicap(me.id, newHcp);
+          if (newHcp != null) upsertPlayerStats(me.id, { handicap: newHcp });
         });
       });
       await deleteDraft(draftId);

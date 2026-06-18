@@ -121,6 +121,48 @@ export function computePlayerStats(rounds, courses, playerId) {
   return { totalRounds: playerRounds.length, avgScoreVsPar, breakdown, roundTrend };
 }
 
+export function computeBirdieStats(rounds, courseMap, playerId) {
+  let birdies = 0, eagles = 0, holesInOne = 0;
+  for (const r of rounds) {
+    if (!r.playerIds.includes(playerId)) continue;
+    const course = courseMap.get(r.courseId);
+    if (!course) continue;
+    const scores = r.scores[playerId];
+    for (let i = 0; i < 18; i++) {
+      if (scores[i] == null) continue;
+      if (scores[i] === 1) { holesInOne++; continue; }
+      const diff = scores[i] - course.holes[i].par;
+      if (diff <= -2) eagles++;
+      else if (diff === -1) birdies++;
+    }
+  }
+  return { birdies, eagles, holesInOne };
+}
+
+export function computeCourseRecords(rounds, courseMap, playerId) {
+  const byCourse = new Map();
+  for (const r of rounds) {
+    const course = courseMap.get(r.courseId);
+    if (!course) continue;
+    if (!byCourse.has(course.name)) byCourse.set(course.name, { course, results: [] });
+    for (const pid of r.playerIds) {
+      const scores = r.scores[pid];
+      if (!scores || scores.some(s => s == null)) continue;
+      byCourse.get(course.name).results.push({ date: r.date, pid, total: scores.reduce((s, v) => s + v, 0) });
+    }
+  }
+  const records = [];
+  for (const { course, results } of byCourse.values()) {
+    results.sort((a, b) => a.date.localeCompare(b.date));
+    let recordScore = Infinity, recordHolder = null;
+    for (const { pid, total } of results) {
+      if (total < recordScore) { recordScore = total; recordHolder = pid; }
+    }
+    if (recordHolder === playerId) records.push({ name: course.name, score: recordScore });
+  }
+  return records;
+}
+
 /**
  * Compute per-par-type breakdown for a player.
  * Returns: { par3: {eagle,birdie,par,bogey,double,triple}, par4: ..., par5: ... }
