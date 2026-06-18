@@ -448,3 +448,17 @@ export async function sendPushToFriends(courseName) {
     console.error('Push notification failed:', e);
   }
 }
+
+export async function upsertPlayerHandicap(userId, handicap) {
+  await supabase
+    .from('player_stats')
+    .upsert({ user_id: userId, handicap, updated_at: new Date().toISOString() });
+}
+
+export async function getPlayerStats(playerIds) {
+  const { data } = await supabase
+    .from('player_stats')
+    .select('user_id, handicap')
+    .in('user_id', playerIds);
+  return new Map((data || []).map(r => [r.user_id, r]));
+}

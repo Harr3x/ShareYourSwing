@@ -1,4 +1,4 @@
-import { getCurrentUser, getUserRounds } from '../supabase.js';
+import { getCurrentUser, getUserRounds, upsertPlayerHandicap } from '../supabase.js';
 import { computePlayerStats, computeHandicap, computeBreakdownByPar } from '../utils/golf.js';
 
 export async function render(container) {
@@ -18,6 +18,7 @@ export async function render(container) {
 
   const stats = computePlayerStats(rounds, courseMap, user.id);
   const hcpResult = computeHandicap(rounds, courseMap, user.id);
+  if (hcpResult.handicap != null) upsertPlayerHandicap(user.id, hcpResult.handicap);
   const byPar = computeBreakdownByPar(rounds, courseMap, user.id);
   const courseStats = courseHoleStats(rounds, user.id);
 

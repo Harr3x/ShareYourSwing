@@ -1,6 +1,5 @@
-import { computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
-import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers, getMyProfile, updateProfile } from '../supabase.js';
+import { getFriends, getPendingRequests, acceptFriendRequest, removeFriend, sendFriendRequest, findProfileByUsername, signOut, getCurrentUser, getCloudRoundsForPlayers, getMyProfile, updateProfile, getPlayerStats } from '../supabase.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -81,9 +80,11 @@ export async function render(container) {
   const [currentUser, friends] = await Promise.all([getCurrentUser(), getFriends()]);
 
   const friendIds = friends.map(f => f.userId);
-  const { rounds, courseMap } = await getCloudRoundsForPlayers(
-    currentUser ? [currentUser.id, ...friendIds] : friendIds
-  );
+  const allPlayerIds = currentUser ? [currentUser.id, ...friendIds] : friendIds;
+  const [{ rounds, courseMap }, statsMap] = await Promise.all([
+    getCloudRoundsForPlayers(allPlayerIds),
+    getPlayerStats(allPlayerIds),
+  ]);
 
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -149,8 +150,8 @@ export async function render(container) {
       list.innerHTML = '<p class="text-muted">Noch keine Spieler.</p>';
     } else {
       const sorted = [...allP].sort((a, b) => {
-        const ha = computeHandicap(rounds, courseMap, a.id).handicap;
-        const hb = computeHandicap(rounds, courseMap, b.id).handicap;
+        const ha = statsMap.get(a.id)?.handicap ?? null;
+        const hb = statsMap.get(b.id)?.handicap ?? null;
         if (ha == null && hb == null) return 0;
         if (ha == null) return 1;
         if (hb == null) return -1;
@@ -159,7 +160,7 @@ export async function render(container) {
 
       list.innerHTML = sorted.map(p => {
         const isMe = p.id === currentUser?.id;
-        const hcp = computeHandicap(rounds, courseMap, p.id);
+        const storedHcp = statsMap.get(p.id)?.handicap ?? null;
         const birdieStats = computeBirdieStats(rounds, courseMap, p.id);
         const records = computeCourseRecords(rounds, courseMap, p.id);
         const chips = achievementChips(birdieStats, records);
@@ -170,7 +171,7 @@ export async function render(container) {
               <div style="font-weight:600">
                 ${escapeHTML(p.name)}
                 ${isMe ? `<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:500;vertical-align:middle">Du</span>` : ''}
-                <span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">${hcp.handicap != null ? 'HCP ' + hcp.handicap.toFixed(1) : ''}</span>
+                <span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">${storedHcp != null ? 'HCP ' + storedHcp.toFixed(1) : ''}</span>
               </div>
               ${chips ? `<div class="achievement-row">${chips}</div>` : ''}
             </div>
