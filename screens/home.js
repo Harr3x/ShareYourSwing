@@ -68,9 +68,10 @@ function liveRoundsHTML(activeRounds, hasActiveSession) {
     const canJoin = !hasActiveSession || isJoined;
     const names = r.players.map(n => escapeHTML(n)).join(', ');
     if (canJoin) {
-      const href = `#play?cloudRoundId=${r.id}&hole=0`;
+      const savedHole = isJoined ? (parseInt(localStorage.getItem('activeCloudRoundHole') || '0', 10)) : 0;
+      const href = `#play?cloudRoundId=${r.id}&hole=${savedHole}`;
       const label = isJoined ? `Fortsetzen ${icons.chevronRight}` : `Beitreten ${icons.chevronRight}`;
-      const onclick = !isJoined ? `onclick="localStorage.setItem('activeCloudRoundId','${r.id}')"` : '';
+      const onclick = !isJoined ? `onclick="localStorage.setItem('activeCloudRoundId','${r.id}');localStorage.removeItem('activeCloudRoundHole');"` : '';
       return `
         <div class="card" style="flex-direction:column;align-items:stretch;gap:6px;">
           <div style="display:flex;align-items:center;justify-content:space-between;">

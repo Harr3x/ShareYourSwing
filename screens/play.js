@@ -26,7 +26,6 @@ export async function render(container, params) {
 
   let draft;
   let isCreator = true;
-  let roundComplete = false;
 
   if (isJoinMode) {
     let cloudRound;
@@ -273,22 +272,6 @@ export async function render(container, params) {
   }
 
   function draw() {
-    if (roundComplete) {
-      container.innerHTML = `
-        <div style="padding:32px 20px;text-align:center;">
-          <div style="font-size:48px;margin-bottom:16px;">⛳</div>
-          <h2 style="margin:0 0 8px">Runde beendet!</h2>
-          <p style="color:var(--text-muted);margin:0 0 24px">Du hast alle 18 Bahnen gespielt.</p>
-          <button id="btn-go-home" class="btn-primary" style="width:100%">Zum Home</button>
-        </div>
-      `;
-      container.querySelector('#btn-go-home').addEventListener('click', () => {
-        localStorage.removeItem('activeCloudRoundId');
-        location.hash = '#home';
-      });
-      return;
-    }
-
     const par = currentPar();
     const isLast = holeIndex === 17;
 
@@ -509,8 +492,9 @@ export async function render(container, params) {
             location.hash = '#home';
           }
         } else {
-          roundComplete = true;
-          draw();
+          localStorage.setItem('activeCloudRoundHole', holeIndex.toString());
+          localStorage.removeItem('activeCloudRoundId');
+          location.hash = '#home';
         }
       }
     } else {
