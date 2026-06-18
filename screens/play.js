@@ -56,6 +56,17 @@ export async function render(container, params) {
 
   const roundPlayers = draft.playerIds.map(id => ({ id, name: draft.playerNames[id] || id }));
 
+  function allScoresFilled() {
+    const filled = (pid) => draft.scores[pid].every((s, i) =>
+      i === holeIndex ? (currentScores[pid] != null && currentScores[pid] > 0) : s != null
+    );
+    if (isJoinMode && !isCreator) {
+      const myId = currentUser?.id;
+      return myId ? filled(myId) : false;
+    }
+    return roundPlayers.every(p => filled(p.id));
+  }
+
   let hcpMap = {};
   try {
     const { rounds, courseMap } = await getCloudRoundsForPlayers(draft.playerIds);
@@ -273,7 +284,7 @@ export async function render(container, params) {
 
   function draw() {
     const par = currentPar();
-    const isLast = holeIndex === 17;
+    const canEnd = allScoresFilled();
 
     container.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px;">
@@ -299,7 +310,7 @@ export async function render(container, params) {
       </div>
 
       <button id="btn-confirm" class="btn-primary" style="margin-top:8px;">
-        ${isLast
+        ${canEnd
           ? (isJoinMode && !isCreator ? 'Fertig' : 'Runde beenden')
           : `Nächste Bahn ${icons.chevronRight}`}
       </button>
@@ -323,6 +334,13 @@ export async function render(container, params) {
 
     void badge.offsetWidth;
     badge.classList.add('score-pop');
+
+    const btn = container.querySelector('#btn-confirm');
+    if (btn) {
+      btn.innerHTML = allScoresFilled()
+        ? (isJoinMode && !isCreator ? 'Fertig' : 'Runde beenden')
+        : `Nächste Bahn ${icons.chevronRight}`;
+    }
   }
 
   // ── Hole overview sheet ──────────────────────────────────────
@@ -474,14 +492,7 @@ export async function render(container, params) {
         }
       }));
 
-      if (holeIndex < draft.holes.length - 1) {
-        holeIndex++;
-        initScores();
-        updateHash();
-        destroyMap();
-        draw();
-        setTimeout(initMap, 50);
-      } else {
+      if (allScoresFilled()) {
         stopGpsWatch();
         if (isCreator) {
           const activeDraft = await getActiveDraft();
@@ -496,6 +507,13 @@ export async function render(container, params) {
           localStorage.removeItem('activeCloudRoundId');
           location.hash = '#home';
         }
+      } else {
+        holeIndex = (holeIndex + 1) % draft.holes.length;
+        initScores();
+        updateHash();
+        destroyMap();
+        draw();
+        setTimeout(initMap, 50);
       }
     } else {
       await Promise.all(
@@ -512,16 +530,16 @@ export async function render(container, params) {
         await setPendingSync(draftId, true);
       }
 
-      if (holeIndex < 17) {
-        holeIndex++;
+      if (allScoresFilled()) {
+        stopGpsWatch();
+        location.hash = `#scorecard?draftId=${draftId}&fromHole=${holeIndex}`;
+      } else {
+        holeIndex = (holeIndex + 1) % draft.holes.length;
         initScores();
         updateHash();
         destroyMap();
         draw();
         setTimeout(initMap, 50);
-      } else {
-        stopGpsWatch();
-        location.hash = `#scorecard?draftId=${draftId}&fromHole=${holeIndex}`;
       }
     }
   }
