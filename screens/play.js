@@ -632,16 +632,14 @@ export async function render(container, params) {
   startRealtime();
   startGpsWatch();
 
-  const stopOnLeave = () => {
-    if (!document.body.contains(container)) {
-      stopGpsWatch();
-      destroyMap();
-      if (pollInterval) clearInterval(pollInterval);
-      stopRealtime();
-      document.removeEventListener('click', stopOnLeave);
-    }
+  const onHashChange = () => {
+    stopGpsWatch();
+    destroyMap();
+    if (pollInterval) clearInterval(pollInterval);
+    stopRealtime();
+    window.removeEventListener('hashchange', onHashChange);
   };
-  document.addEventListener('click', stopOnLeave);
+  window.addEventListener('hashchange', onHashChange);
 
   // Reconnect: sync pending scores when internet returns
   window.addEventListener('online', function onReconnect() {
