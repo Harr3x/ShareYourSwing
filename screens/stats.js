@@ -18,6 +18,7 @@ export async function render(container) {
 
   const stats = computePlayerStats(rounds, courseMap, user.id);
   const hcpResult = computeHandicap(rounds, courseMap, user.id);
+  console.log('[stats] hcp:', hcpResult.handicap, 'rounds:', rounds.length);
   if (hcpResult.handicap != null) {
     upsertPlayerStats(user.id, {
       handicap: hcpResult.handicap,
