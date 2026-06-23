@@ -1,6 +1,7 @@
 import { getActiveDraft } from '../db.js';
 import { getCurrentUser, getMyRounds } from '../supabase.js';
 import { icons } from '../components/icons.js';
+import { APP_URL } from '../config.js';
 
 function escapeHTML(str) {
   return String(str)
@@ -44,7 +45,10 @@ export async function render(container) {
   container.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
       <h1 style="margin:0">ShareYourSwing</h1>
-      <a href="#courses" style="color:var(--text-muted);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);box-shadow:var(--shadow-sm);" title="Plätze">${icons.courses}</a>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="btn-share" class="btn-icon" title="App teilen">${icons.share}</button>
+        <a href="#courses" style="color:var(--text-muted);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);box-shadow:var(--shadow-sm);" title="Plätze">${icons.courses}</a>
+      </div>
     </div>
     ${!user
       ? `<p class="text-muted">Bitte meld dich an.</p>`
@@ -58,6 +62,39 @@ export async function render(container) {
       ${recentRoundsHTML(publishedRounds)}
     </div>
   `;
+
+  container.querySelector('#btn-share')?.addEventListener('click', shareApp);
+}
+
+async function shareApp() {
+  const data = {
+    title: 'ShareYourSwing',
+    text: 'Verfolge deine Golfrunden – live Score teilen, Freunde einladen, gemeinsam spielen.',
+    url: APP_URL,
+  };
+  if (navigator.share) {
+    try { await navigator.share(data); } catch (e) {}
+  } else {
+    try {
+      await navigator.clipboard.writeText(APP_URL);
+      showToast('Link kopiert!');
+    } catch (e) {}
+  }
+}
+
+function showToast(msg) {
+  const toast = document.createElement('div');
+  toast.textContent = msg;
+  Object.assign(toast.style, {
+    position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)',
+    background: 'var(--text)', color: 'var(--bg)', padding: '10px 20px',
+    borderRadius: 'var(--radius)', fontSize: '15px', fontWeight: 600,
+    zIndex: 300, boxShadow: 'var(--shadow-md)', opacity: '0',
+    transition: 'opacity 0.25s ease',
+  });
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.style.opacity = '1');
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 2000);
 }
 
 function liveRoundsHTML(activeRounds, hasActiveSession) {
