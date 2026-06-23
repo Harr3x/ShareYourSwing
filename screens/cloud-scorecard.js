@@ -1,5 +1,6 @@
 import { getCloudRound } from '../supabase.js';
 import { scoreCellHTML } from '../components/score-cell.js';
+import { roundChartHTML } from '../components/round-chart.js';
 import { icons } from '../components/icons.js';
 
 export async function render(container, params) {
@@ -52,6 +53,13 @@ export async function render(container, params) {
           <thead><tr><th>Spieler</th>${headerCells}<th>Total</th><th>+/−</th></tr>${parRow}</thead>
           <tbody>${playerRows}</tbody>
         </table>
+      </div>
+      <div id="round-chart-wrap">
+        ${(function() {
+          const chPlayers = participants.map(p => ({ id: p.user_id, name: p.display_name }));
+          const chScores = Object.fromEntries(participants.map(p => [p.user_id, p.scores || []]));
+          return roundChartHTML(chPlayers, chScores, holes);
+        })()}
       </div>
     </div>
   `;

@@ -9,7 +9,7 @@ export async function render(container) {
   }
 
   const rounds = await getUserRounds();
-  const courseMap = new Map(rounds.map(r => [r.courseId, { holes: r.holes }]));
+  const courseMap = new Map(rounds.map(r => [r.courseId, { name: r.courseName, holes: r.holes }]));
 
   if (!rounds.length) {
     container.innerHTML = '<h1>Statistiken</h1><p class="text-muted">Noch keine Rundendaten vorhanden.</p>';

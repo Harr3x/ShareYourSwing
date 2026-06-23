@@ -158,7 +158,7 @@ export function computeCourseRecords(rounds, courseMap, playerId) {
     for (const { pid, total } of results) {
       if (total < recordScore) { recordScore = total; recordHolder = pid; }
     }
-    if (recordHolder === playerId) records.push({ name: course.name, score: recordScore });
+    if (recordHolder === playerId && course.name) records.push({ name: course.name, score: recordScore });
   }
   return records;
 }

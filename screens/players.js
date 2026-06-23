@@ -27,9 +27,10 @@ function achievementChips(birdieStats, records) {
   if (birdies > 0) chips.push(
     `<span class="achievement" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;">${iconBirdie} ${birdies} Birdie${birdies !== 1 ? 's' : ''}</span>`
   );
-  for (const r of records) chips.push(
-    `<span class="achievement" style="background:#fff3e0;color:#c2510a;border-color:#ffcc80;">${iconFlag} Rekord · ${escapeHTML(r.name)}</span>`
-  );
+  for (const r of records) {
+    if (!r.name) continue;
+    chips.push(`<span class="achievement" style="background:#fff3e0;color:#c2510a;border-color:#ffcc80;">${iconFlag} Rekord · ${escapeHTML(r.name)}</span>`);
+  }
   return chips.join('');
 }
 

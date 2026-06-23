@@ -2,7 +2,9 @@ import { getDraft, saveDraftScore, setCloudRoundId, setPendingSync, getActiveDra
 import { createActiveRound, syncParticipantScores, mergePlayerScore, getActiveRound, getCurrentUser, getCloudRoundsForPlayers, supabase } from '../supabase.js';
 import { getScoreClass, getScoreLabel, computeHandicap } from '../utils/golf.js';
 import { icons } from '../components/icons.js';
-import { haversineMeters } from '../utils/geo.js';
+import { haversineMeters, bearingDegrees } from '../utils/geo.js';
+
+const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 function escapeHTML(str) {
   return String(str)
@@ -87,6 +89,9 @@ export async function render(container, params) {
   let holeMap = null;
   let mapMarker = null;
   let mapCircle = null;
+  let fsMap = null;
+  let fsMarker = null;
+  let fsCircle = null;
 
   let pollInterval = null;
   let realtimeChannel = null;
@@ -118,7 +123,7 @@ export async function render(container, params) {
       dragging: true,
     });
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    L.tileLayer(TILE_URL, {
       maxZoom: 19,
     }).addTo(holeMap);
 
@@ -170,7 +175,125 @@ export async function render(container, params) {
     }
   }
 
+  function openFullscreenMap() {
+    if (fsMap) return;
+    const hole = draft.holes[holeIndex];
+    if (hole?.pinLat == null) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'fs-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;overflow:hidden;background:#000';
+    document.body.appendChild(overlay);
+
+    // Rotating wrapper — oversized so corners stay covered after any rotation angle
+    const rotateWrap = document.createElement('div');
+    rotateWrap.id = 'fs-rotate-wrap';
+    rotateWrap.style.cssText = 'position:absolute;top:50%;left:50%;width:130vmax;height:130vmax;transform-origin:center center;transform:translate(-50%,-50%)';
+    overlay.appendChild(rotateWrap);
+
+    const mapDiv = document.createElement('div');
+    mapDiv.id = 'fs-map-div';
+    mapDiv.style.cssText = 'width:100%;height:100%';
+    rotateWrap.appendChild(mapDiv);
+
+    fsMap = L.map(mapDiv, {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: true,
+      touchZoom: true,
+      doubleClickZoom: false,
+    });
+
+    L.tileLayer(TILE_URL, {
+      maxZoom: 19,
+    }).addTo(fsMap);
+
+    fsMarker = L.marker([hole.pinLat, hole.pinLng], { icon: flagIcon }).addTo(fsMap);
+
+    if (currentPosition) {
+      fsCircle = L.circle([currentPosition.lat, currentPosition.lng], {
+        radius: 3,
+        color: '#2196F3',
+        fillColor: '#2196F3',
+        fillOpacity: 0.8,
+        weight: 2,
+      }).addTo(fsMap);
+      fsFitBounds([hole.pinLat, hole.pinLng], [currentPosition.lat, currentPosition.lng]);
+    } else {
+      fsMap.setView([hole.pinLat, hole.pinLng], 16);
+    }
+
+    const backBtn = document.createElement('button');
+    backBtn.id = 'fs-back-btn';
+    backBtn.style.cssText = 'position:fixed;top:16px;left:16px;z-index:10000;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:8px 12px;font-size:14px;cursor:pointer;color:var(--text);display:flex;align-items:center;gap:4px;';
+    backBtn.innerHTML = `${icons.chevronLeft} Zurück`;
+    backBtn.addEventListener('click', closeFullscreenMap);
+    overlay.appendChild(backBtn);
+
+    const distEl = document.createElement('div');
+    distEl.id = 'fs-distance';
+    distEl.style.cssText = 'position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:10000;background:rgba(0,0,0,0.72);color:#fff;border-radius:20px;padding:8px 20px;font-size:15px;font-weight:600;';
+    distEl.textContent = currentDistance != null ? `${currentDistance}m zum Loch` : 'GPS...';
+    overlay.appendChild(distEl);
+
+    const zoomBtns = document.createElement('div');
+    zoomBtns.style.cssText = 'position:fixed;bottom:88px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;';
+    const btnStyle = 'width:40px;height:40px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);font-size:22px;line-height:1;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;';
+    const zoomIn = document.createElement('button');
+    zoomIn.style.cssText = btnStyle;
+    zoomIn.textContent = '+';
+    zoomIn.addEventListener('click', () => fsMap?.zoomIn());
+    const zoomOut = document.createElement('button');
+    zoomOut.style.cssText = btnStyle;
+    zoomOut.textContent = '−';
+    zoomOut.addEventListener('click', () => fsMap?.zoomOut());
+    zoomBtns.appendChild(zoomIn);
+    zoomBtns.appendChild(zoomOut);
+    overlay.appendChild(zoomBtns);
+
+    applyFsRotation();
+  }
+
+  // fitBounds with padding compensating for the oversized 130vmax container
+  function fsFitBounds(pinLatLng, playerLatLng) {
+    const vmax = Math.max(window.innerWidth, window.innerHeight);
+    const containerPx = vmax * 1.3;
+    const padX = Math.round((containerPx - window.innerWidth) / 2) + 40;
+    const padY = Math.round((containerPx - window.innerHeight) / 2) + 40;
+    fsMap.fitBounds([pinLatLng, playerLatLng], { padding: [padY, padX], maxZoom: 18 });
+  }
+
+  function applyFsRotation() {
+    if (!fsMap) return;
+    const hole = draft.holes[holeIndex];
+    if (!currentPosition || !hole?.pinLat) return;
+    const bearing = bearingDegrees(
+      currentPosition.lat, currentPosition.lng,
+      hole.pinLat, hole.pinLng
+    );
+    const rotateWrap = document.getElementById('fs-rotate-wrap');
+    if (rotateWrap) {
+      rotateWrap.style.transform = `translate(-50%, -50%) rotate(${-bearing}deg)`;
+    }
+    // Counter-rotate the inner SVG so the flag stays upright.
+    // Must target the SVG (not the outer div) — Leaflet overwrites the outer div's
+    // transform when repositioning the marker, which would reset a rotation there.
+    const flagEl = fsMarker?.getElement();
+    const svg = flagEl?.querySelector('svg');
+    if (svg) {
+      svg.style.transformOrigin = '12px 34px'; // bottom-center = iconAnchor
+      svg.style.transform = `rotate(${bearing}deg)`;
+    }
+  }
+
+  function closeFullscreenMap() {
+    document.getElementById('fs-overlay')?.remove();
+    if (fsMap) { fsMap.remove(); fsMap = null; fsMarker = null; fsCircle = null; }
+  }
+
   function destroyMap() {
+    closeFullscreenMap();
     if (holeMap) {
       holeMap.remove();
       holeMap = null;
@@ -197,6 +320,22 @@ export async function render(container, params) {
         const el = container.querySelector('#distance-display');
         if (el) el.textContent = currentDistance != null ? `${currentDistance}m zum Loch` : 'GPS...';
         updateMap();
+        if (fsMap) {
+          if (fsCircle) {
+            fsCircle.setLatLng([currentPosition.lat, currentPosition.lng]);
+          } else {
+            const h = draft.holes[holeIndex];
+            if (h?.pinLat != null) {
+              fsCircle = L.circle([currentPosition.lat, currentPosition.lng], {
+                radius: 3, color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.8, weight: 2,
+              }).addTo(fsMap);
+              fsFitBounds([h.pinLat, h.pinLng], [currentPosition.lat, currentPosition.lng]);
+            }
+          }
+          const fsDist = document.getElementById('fs-distance');
+          if (fsDist) fsDist.textContent = currentDistance != null ? `${currentDistance}m zum Loch` : 'GPS...';
+          applyFsRotation();
+        }
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 3000 }
@@ -684,6 +823,7 @@ export async function render(container, params) {
     if (e.target.closest('#btn-back')) { goBack(); return; }
     if (e.target.closest('#btn-confirm')) { advance(); return; }
     if (e.target.closest('#btn-hole-overview')) { showHoleOverview(); return; }
+    if (e.target.closest('#map-container')) { openFullscreenMap(); return; }
 
     const minus = e.target.closest('[data-minus]');
     if (minus) {

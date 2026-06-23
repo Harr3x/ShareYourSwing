@@ -2,6 +2,7 @@ import { getDraft, saveDraftScore, deleteDraft, setCloudRoundId, setPendingSync,
 import { createActiveRound, syncParticipantScores, mergePlayerScore, publishActiveRound, deleteActiveRound, removeParticipant, sendPushToFriends, getActiveRound, getUserRounds, upsertPlayerStats, getCurrentUser } from '../supabase.js';
 import { computeHandicap } from '../utils/golf.js';
 import { scoreCellHTML } from '../components/score-cell.js';
+import { roundChartHTML } from '../components/round-chart.js';
 import { icons } from '../components/icons.js';
 
 export async function render(container, params) {
@@ -80,6 +81,9 @@ export async function render(container, params) {
             <thead><tr><th>Spieler</th>${headerCells}<th>Total</th><th>+/−</th></tr>${parRow}</thead>
             <tbody>${playerRows}</tbody>
           </table>
+        </div>
+        <div id="round-chart-wrap">
+          ${roundChartHTML(roundPlayers, draft.scores, course.holes)}
         </div>
         <div style="margin-top:16px;">
           <a href="#play?draftId=${draftId}&hole=${fromHole}" class="btn-primary" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;text-decoration:none;border-radius:var(--radius);">
@@ -166,7 +170,10 @@ export async function render(container, params) {
             vsParEl.textContent = p.scores.every(v => v == null) ? '—' : (diff > 0 ? `+${diff}` : `${diff}`);
           }
         });
-      } catch (e) {}
+          const liveRoster = draft.playerIds.map(id => ({ id, name: draft.playerNames[id] || id }));
+          const chartWrap = container.querySelector('#round-chart-wrap');
+          if (chartWrap) chartWrap.innerHTML = roundChartHTML(liveRoster, draft.scores, course.holes);
+        } catch (e) {}
     }, 5000);
   }
 
