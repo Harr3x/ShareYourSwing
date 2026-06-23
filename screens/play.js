@@ -92,6 +92,8 @@ export async function render(container, params) {
   let fsMap = null;
   let fsMarker = null;
   let fsCircle = null;
+  let fsTapCircle = null;
+  let currentBearing = null;
 
   let pollInterval = null;
   let realtimeChannel = null;
@@ -237,6 +239,11 @@ export async function render(container, params) {
     distEl.textContent = currentDistance != null ? `${currentDistance}m zum Loch` : 'GPS...';
     overlay.appendChild(distEl);
 
+    overlay.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      handleFsMapTap(e.clientX, e.clientY);
+    });
+
     const zoomBtns = document.createElement('div');
     zoomBtns.style.cssText = 'position:fixed;bottom:88px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;';
     const btnStyle = 'width:40px;height:40px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);font-size:22px;line-height:1;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;';
@@ -272,6 +279,7 @@ export async function render(container, params) {
       currentPosition.lat, currentPosition.lng,
       hole.pinLat, hole.pinLng
     );
+    currentBearing = bearing;
     const rotateWrap = document.getElementById('fs-rotate-wrap');
     if (rotateWrap) {
       rotateWrap.style.transform = `translate(-50%, -50%) rotate(${-bearing}deg)`;
@@ -287,9 +295,46 @@ export async function render(container, params) {
     }
   }
 
+  function handleFsMapTap(clientX, clientY) {
+    if (!fsMap) return;
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const rad = (currentBearing ?? 0) * Math.PI / 180;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const ux = dx * Math.cos(rad) - dy * Math.sin(rad);
+    const uy = dx * Math.sin(rad) + dy * Math.cos(rad);
+    const containerPx = Math.max(window.innerWidth, window.innerHeight) * 1.3;
+    const latLng = fsMap.containerPointToLatLng(L.point(containerPx / 2 + ux, containerPx / 2 + uy));
+
+    const fsDist = document.getElementById('fs-distance');
+    if (!currentPosition) {
+      if (fsDist) fsDist.textContent = 'GPS benötigt';
+      return;
+    }
+    const dist = haversineMeters(currentPosition.lat, currentPosition.lng, latLng.lat, latLng.lng);
+    if (fsTapCircle) {
+      fsTapCircle.setLatLng(latLng);
+    } else {
+      const tapIcon = L.divIcon({
+        className: '',
+        html: `<svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="11" cy="11" r="9" fill="rgba(255,111,0,0.15)" stroke="#FF6F00" stroke-width="2.5"/>
+          <circle cx="11" cy="11" r="3.5" fill="#FF6F00"/>
+        </svg>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      });
+      fsTapCircle = L.marker(latLng, { icon: tapIcon }).addTo(fsMap);
+    }
+    if (fsDist) fsDist.textContent = `📍 ${dist}m`;
+  }
+
   function closeFullscreenMap() {
     document.getElementById('fs-overlay')?.remove();
     if (fsMap) { fsMap.remove(); fsMap = null; fsMarker = null; fsCircle = null; }
+    fsTapCircle = null;
+    currentBearing = null;
   }
 
   function destroyMap() {
